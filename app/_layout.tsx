@@ -1,29 +1,55 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import 'react-native-reanimated';
+import { TransitionPresets } from "@react-navigation/stack";
+import { useFonts } from "expo-font";
+import { LinearGradient } from "expo-linear-gradient";
+import { Stack } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
+import { StatusBar } from "expo-status-bar";
+import { useCallback, useEffect } from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import { useColorScheme } from '@/hooks/useColorScheme';
+// load splashscreen
+SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-  const [loaded] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+  // load fonts
+  const [fontsLoaded] = useFonts({
+    Sora: require("@/assets/fonts/Sora.ttf"),
+    SoraBold: require("@/assets/fonts/Sora-Bold.ttf"),
+    SoraSemiBold: require("@/assets/fonts/Sora-SemiBold.ttf"),
+    SoraExtraBold: require("@/assets/fonts/Sora-ExtraBold.ttf"),
+    Courgete: require("@/assets/fonts/Courgette.ttf"),
   });
 
-  if (!loaded) {
-    // Async font loading only occurs in development.
-    return null;
-  }
+  const onLayoutRootView = useCallback(async () => {
+    if (fontsLoaded) {
+      await SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded]);
+
+  useEffect(() => {
+    if (fontsLoaded) {
+      onLayoutRootView();
+    }
+  }, [fontsLoaded, onLayoutRootView]);
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    <LinearGradient
+      colors={["#2764A1", "#2A77C4", "#318CE7"]}
+      className="flex-1"
+      onLayout={onLayoutRootView}
+    >
+      <StatusBar style="auto" translucent />
+      <SafeAreaView className="flex-1">
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            ...TransitionPresets.SlideFromRightIOS,
+            gestureDirection: "horizontal"
+          }}
+        >
+          <Stack.Screen name="index" />
+        </Stack>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
