@@ -12,8 +12,10 @@ import Animated, {
 } from "react-native-reanimated";
 import "../global.css";
 import { useOnboardingStore } from "@/store/onboardingStore";
+import { useSessionStore } from "@/store/sessionState";
 
 export default function Index() {
+  const { checkAndResetStreak } = useSessionStore();
   const isOnboardingComplete = useOnboardingStore((state) => state.isOnboardingFinished)
   const [animationLoaded, setAnimationLoaded] = useState(false);
 
@@ -46,6 +48,7 @@ export default function Index() {
   // must change on condition
   useEffect(() => {
     if (animationLoaded) {
+      checkAndResetStreak();
       if (isOnboardingComplete) {
         const switchPage = setTimeout(() => {
           router.replace("/(main)/focus");
@@ -59,7 +62,7 @@ export default function Index() {
       }
      
     }
-  }, [animationLoaded, isOnboardingComplete]);
+  }, [animationLoaded, isOnboardingComplete, checkAndResetStreak]);
 
   return (
     <LinearGradient
