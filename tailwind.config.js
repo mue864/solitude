@@ -7,6 +7,13 @@ module.exports = {
     extend: {
       colors: {
         "onboarding-primary": "#337EC9",
+        "primary": "#F4F9FF",
+        "text-primary": "#2C3E50",
+        "text-secondary": "#506070",
+        "active-tab": "#337EC9",
+        "tab-bg": "#F5F8FB",
+
+
       },
       fontFamily: {
         Sora: ["Sora"],

@@ -11,8 +11,10 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import "../global.css";
+import { useOnboardingStore } from "@/store/onboardingStore";
 
 export default function Index() {
+  const isOnboardingComplete = useOnboardingStore((state) => state.isOnboardingFinished)
   const [animationLoaded, setAnimationLoaded] = useState(false);
 
   const iconSlideUp = useSharedValue(0);
@@ -44,12 +46,20 @@ export default function Index() {
   // must change on condition
   useEffect(() => {
     if (animationLoaded) {
-      const switchPage = setTimeout(() => {
-        router.replace("/(onboarding)/welcome");
-      }, 500);
-      return () => clearTimeout(switchPage);
+      if (isOnboardingComplete) {
+        const switchPage = setTimeout(() => {
+          router.replace("/(main)/focus");
+        }, 500);
+        return () => clearTimeout(switchPage);
+      } else {
+        const switchPage = setTimeout(() => {
+          router.replace("/(onboarding)/welcome");
+        }, 500);
+         return () => clearTimeout(switchPage);
+      }
+     
     }
-  }, [animationLoaded]);
+  }, [animationLoaded, isOnboardingComplete]);
 
   return (
     <LinearGradient

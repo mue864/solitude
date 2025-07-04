@@ -4,8 +4,10 @@ import { router } from "expo-router";
 import { Text, View } from "react-native";
 import Progress from "@/assets/svg/onboarding/progress5.svg";
 import Lottieview from "lottie-react-native";
+import { useOnboardingStore } from "@/store/onboardingStore";
 
 export default function CompleteSetup() {
+  const setOnboardingComplete = useOnboardingStore((state) => state.setFinishedOnboarding)
   return (
     <View
       className="mt-10 flex-1 relative"
@@ -38,7 +40,7 @@ export default function CompleteSetup() {
         <View className="w-full mb-10">
           <Button
             buttonText={Strings.completeSetupBtn}
-            nextPage={() => router.push("/(onboarding)/workType")}
+            nextPage={() => {setOnboardingComplete(); router.push("/(main)/focus");}}
           />
         </View>
       </View>

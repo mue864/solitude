@@ -1,10 +1,10 @@
 import { TransitionPresets } from "@react-navigation/stack";
 import { useFonts } from "expo-font";
-import { LinearGradient } from "expo-linear-gradient";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect } from "react";
+import { View, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 // load splashscreen
@@ -33,23 +33,50 @@ export default function RootLayout() {
   }, [fontsLoaded, onLayoutRootView]);
 
   return (
-    <LinearGradient
-      colors={["#2764A1", "#2A77C4", "#318CE7"]}
-      className="flex-1"
-      onLayout={onLayoutRootView}
-    >
-      <StatusBar style="auto" translucent />
+    <View style={styles.container} onLayout={onLayoutRootView}>
+      <StatusBar style="dark" />
+      <View style={styles.background} />
       <SafeAreaView className="flex-1">
         <Stack
           screenOptions={{
             headerShown: false,
             ...TransitionPresets.SlideFromRightIOS,
-            gestureDirection: "horizontal"
+            gestureDirection: "horizontal",
+            contentStyle: styles.screenContent,
           }}
         >
-          <Stack.Screen name="index" />
+          <Stack.Screen
+            name="index"
+            options={{
+              contentStyle: [
+                styles.screenContent,
+                { backgroundColor: "transparent" },
+              ],
+            }}
+          />
+          <Stack.Screen
+            name="(main)"
+            options={{
+              headerShown: false,
+              contentStyle: styles.screenContent,
+            }}
+          />
         </Stack>
       </SafeAreaView>
-    </LinearGradient>
+    </View>
   );
-}
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  background: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#F4F9FF',
+  },
+  screenContent: {
+    backgroundColor: 'transparent',
+  },
+});

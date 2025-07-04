@@ -21,7 +21,12 @@ const OnboardingLayout = () => {
           
         >
           <Stack.Screen name="welcome" />
-          <Stack.Screen name="feature1" />
+          <Stack.Screen name="widgets" />
+          <Stack.Screen name="workType" />
+          <Stack.Screen name="pomodoro" />
+          <Stack.Screen name="personalization" />
+          <Stack.Screen name="notifications" />
+          <Stack.Screen name="completeSetup" />
         </Stack>
       </View>
     </LinearGradient>
