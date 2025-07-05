@@ -126,28 +126,39 @@ export const useSessionStore = create<SessionState>()(
 
       // Start a predefined flow
       startFlow: (flowName) => {
-        const flow = FLOWS[flowName];
-        if (!flow || flow.length === 0) return;
+        console.log('Starting flow:', flowName);
+        const flow = FLOWS[flowName as keyof typeof FLOWS];
+        console.log('Flow data:', flow);
+        
+        if (!flow || flow.length === 0) {
+          console.log('Invalid or empty flow');
+          return;
+        }
 
+        const firstSession = flow[0];
+        console.log('First session:', firstSession);
+        
         // Clear any existing intervals
         if (get().isRunning) {
-          // If a session is running, stop it properly
+          console.log('Stopping current session');
           set({
             isRunning: false,
             isPaused: false,
           });
         }
 
-        // Set the new flow state
-        set({
+        const newState = {
           currentFlow: flowName,
           currentFlowStep: 0,
-          sessionType: flow[0].type as SessionType, // Ensure type safety
-          duration: flow[0].duration,
-          isRunning: false, // Don't start automatically
+          sessionType: firstSession.type as SessionType,
+          duration: firstSession.duration,
+          isRunning: false,
           isPaused: false,
-          sessionId: Date.now().toString(), // New session ID
-        });
+          sessionId: Date.now().toString(),
+        };
+        
+        console.log('Setting new state:', newState);
+        set(newState);
       },
 
       // Move to the next session in the current flow
