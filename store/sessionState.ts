@@ -15,7 +15,6 @@ type SessionState = {
   lastSessionDate: string | null;
   setSessionType: (type: SessionState["sessionType"]) => void;
   setDuration: (duration: number | ((prev: number) => number)) => void;
-  toggleRunning: () => void;
   pauseSession: () => void;
   resumeSession: () => void;
   reset: () => void;
@@ -58,13 +57,17 @@ export const useSessionStore = create<SessionState>()(
           set({ duration: durationOrUpdater });
         }
       },
-      toggleRunning: () =>
-        set({
-          isRunning: !get().isRunning,
-          isPaused: get().isRunning ? true : false,
-        }),
-      pauseSession: () => set({ isRunning: false, isPaused: true }),
-      resumeSession: () => set({ isRunning: true, isPaused: false }),
+      pauseSession: () => {
+        // No need to update duration here, just toggle the states
+        set({ 
+          isRunning: false, 
+          isPaused: true,
+        });
+      },
+      resumeSession: () => set({ 
+        isRunning: true, 
+        isPaused: false
+      }),
       reset: () =>
         set({
           sessionType: "Work",
@@ -75,31 +78,35 @@ export const useSessionStore = create<SessionState>()(
       completeSession: () =>
         set((state) => {
           const today = new Date().toISOString().split("T")[0];
-
-          // If we already completed a session today, don't increment
-          if (state.lastSessionDate === today) {
-            return state;
-          }
-
           const yesterday = new Date();
           yesterday.setDate(yesterday.getDate() - 1);
           const yesterdayStr = yesterday.toISOString().split("T")[0];
-
-          // Calculate new streak
-          const newStreak =
-            state.lastSessionDate === yesterdayStr
-              ? state.currentStreak + 1
-              : state.lastSessionDate === today
-                ? state.currentStreak // Same day, no change
-                : 1; // Missed a day, reset to 1
+          
+          // Only calculate streak if this is the first session of the day
+          let newStreak = state.currentStreak;
+          if (state.lastSessionDate !== today) {
+            newStreak =
+              state.lastSessionDate === yesterdayStr
+                ? state.currentStreak + 1
+                : state.lastSessionDate && state.lastSessionDate < yesterdayStr
+                  ? 1 // Missed a day, reset to 1
+                  : state.currentStreak; // No change if same day
+          }
 
           // Only proceed if we haven't exceeded total sessions
           if (state.completedSessions >= state.totalSessions) {
-            return state;
+            return {
+              ...state,
+              isRunning: false,
+              isPaused: false,
+              lastSessionDate: today, // Still update last session date
+            };
           }
 
           return {
             ...state,
+            isRunning: false,
+            isPaused: false,
             completedSessions: state.completedSessions + 1,
             lastSessionDate: today,
             currentStreak: newStreak,
