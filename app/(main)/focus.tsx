@@ -63,36 +63,70 @@ export default function Focus() {
   // Get the current session state
   const currentSessionId = useSessionStore((state) => state.sessionId);
 
-  // Show quote modal at the start of each new session
+  // Track the last flow and step we showed a quote for
+  const lastFlowContext = useRef<{
+    flow: string | null;
+    step: number;
+    lastQuoteTime: number;
+  }>({ flow: null, step: -1, lastQuoteTime: 0 });
+
+  // Show quote modal at meaningful moments
   useEffect(() => {
     if (!isRunning || !currentSessionId) {
       return;
     }
 
-    // Always show quote for a new session
+    const now = Date.now();
+    const shouldShowQuote = () => {
+      // Don't show if we just showed a quote recently (within 5 minutes)
+      if (now - lastFlowContext.current.lastQuoteTime < 5 * 60 * 1000) {
+        return false;
+      }
+
+      // Show quote when:
+      // 1. Starting a new flow (flow changed)
+      // 2. First session of the day (last quote was more than 12 hours ago)
+      // 3. After a long break (coming back from >1 hour of inactivity)
+      return (
+        currentFlow !== lastFlowContext.current.flow || // New flow
+        now - lastFlowContext.current.lastQuoteTime > 12 * 60 * 60 * 1000 || // First of day
+        (lastFlowContext.current.flow && !currentFlow) // Just finished a flow
+      );
+    };
+
     if (currentSessionId !== lastSessionId.current) {
       lastSessionId.current = currentSessionId;
-
-      // Small delay to ensure state is fully updated
-      const showQuote = setTimeout(() => {
-        setShowQuoteModal(true);
-
-        // Auto-close the modal after 3 seconds
-        const hideQuote = setTimeout(() => {
-          setShowQuoteModal(false);
-        }, 3000);
-
-        return () => {
-          clearTimeout(hideQuote);
+      
+      if (shouldShowQuote()) {
+        lastFlowContext.current = {
+          flow: currentFlow,
+          step: currentFlowStep,
+          lastQuoteTime: now
         };
-      }, 100);
 
-      return () => {
-        clearTimeout(showQuote);
-      };
-    } else {
+        // Small delay to ensure state is fully updated
+        const showQuote = setTimeout(() => {
+          setShowQuoteModal(true);
+
+          // Auto-close the modal after 3 seconds
+          const hideQuote = setTimeout(() => {
+            setShowQuoteModal(false);
+          }, 3000);
+
+          return () => clearTimeout(hideQuote);
+        }, 100);
+
+        return () => clearTimeout(showQuote);
+      } else {
+        // Update context without showing quote
+        lastFlowContext.current = {
+          flow: currentFlow,
+          step: currentFlowStep,
+          lastQuoteTime: lastFlowContext.current.lastQuoteTime
+        };
+      }
     }
-  }, [isRunning, currentSessionId]);
+  }, [isRunning, currentSessionId, currentFlow, currentFlowStep]);
 
   // Handle quote modal close
   const handleQuoteModalClose = useCallback(() => {
