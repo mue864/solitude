@@ -51,6 +51,7 @@ export default function Focus() {
     startFlow,
     currentFlow,
     currentFlowStep,
+    resumeSession,
     // completedPomodoros is available but not currently used
   } = useSessionStore();
 
@@ -66,8 +67,6 @@ export default function Focus() {
   // Get the current session state
   const currentSessionId = useSessionStore((state) => state.sessionId);
 
-
-
   // Show quote modal at the start of each new session
   useEffect(() => {
     if (!isRunning || !currentSessionId) {
@@ -77,22 +76,21 @@ export default function Focus() {
     // Always show quote for a new session
     if (currentSessionId !== lastSessionId.current) {
       lastSessionId.current = currentSessionId;
-      
+
       // Small delay to ensure state is fully updated
       const showQuote = setTimeout(() => {
         setShowQuoteModal(true);
-        
+
         // Auto-close the modal after 3 seconds
         const hideQuote = setTimeout(() => {
           setShowQuoteModal(false);
         }, 3000);
-        
-        return () => {
 
+        return () => {
           clearTimeout(hideQuote);
         };
       }, 100);
-      
+
       return () => {
         clearTimeout(showQuote);
       };
@@ -139,26 +137,38 @@ export default function Focus() {
     // Only run the timer if running and not paused
     if (isRunning && !isPaused) {
       cleanup(); // Clear any existing timer to prevent duplicates
-      
+
       timerRef.current = setInterval(() => {
         setDuration((currentDuration: number) => {
           // If we reach 0 or below, end the session
           if (currentDuration <= 1) {
             cleanup();
-            completeSession();
+            // Use setTimeout to allow state to update before starting next session
+            setTimeout(() => {
+              completeSession();
+            }, 0);
             return 0;
           }
           // Otherwise, just decrement the timer
           return currentDuration - 1;
         });
       }, 1000);
-    } else {
+    } else if (isRunning && isPaused) {
+      // If we're in a running state but paused, clear the timer
       cleanup();
+    } else if (!isRunning && currentFlow && currentFlowStep > 0) {
+      // If we're in a flow and not running, but should be, start the timer
+      // This handles the case when we transition to a new session in the flow
+      const timerId = setTimeout(() => {
+        resumeSession();
+      }, 0);
+      
+      return () => clearTimeout(timerId);
     }
 
     // Clean up on unmount or when dependencies change
     return cleanup;
-  }, [isRunning, isPaused, setDuration, completeSession, currentSessionId, currentFlowStep]);
+  }, [isRunning, isPaused, setDuration, completeSession, currentFlow, currentFlowStep, resumeSession]);
 
   // Update duration when session type changes - only when not running and not paused
   useEffect(() => {
