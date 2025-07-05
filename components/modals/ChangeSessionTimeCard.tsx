@@ -1,7 +1,7 @@
-import { useSessionStore } from "@/store/sessionState";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import React, { useEffect, useState } from "react";
+import { SESSION_TYPES, SessionType, useSessionStore } from "@/store/sessionState";
 import {
   Modal,
   Platform,
@@ -11,31 +11,31 @@ import {
   View,
 } from "react-native";
 
-type ChangeSessionTimeCardProps = {
+interface ChangeSessionTimeCardProps {
   isVisible: boolean;
   onClose: () => void;
-  sessionType: "Work" | "Study" | "Break";
-};
+  sessionType: SessionType;
+}
 
 const ChangeSessionTimeCard = ({
   isVisible,
   onClose,
   sessionType,
 }: ChangeSessionTimeCardProps) => {
-  const duration = useSessionStore((state) => state.duration);
   const setDuration = useSessionStore((state) => state.setDuration);
   const [minutes, setMinutes] = useState("");
   const [seconds, setSeconds] = useState("00");
 
   useEffect(() => {
     if (isVisible) {
-      // Initialize with current duration when modal opens
-      const mins = Math.floor(duration / 60);
-      const secs = duration % 60;
+      // Get duration in minutes from SESSION_TYPES (which is in seconds)
+      const durationInMinutes = Math.floor(SESSION_TYPES[sessionType] / 60);
+      const mins = Math.floor(durationInMinutes);
+      const secs = durationInMinutes % 60;
       setMinutes(mins.toString());
       setSeconds(secs.toString().padStart(2, "0"));
     }
-  }, [isVisible, duration]);
+  }, [isVisible, sessionType]);
 
   const handleSave = () => {
     const totalSeconds = parseInt(minutes) * 60 + parseInt(seconds);

@@ -1,22 +1,38 @@
-import Add from "@/assets/svg/Add_ring_duotone.svg";
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import { Modal, Pressable, ScrollView, Text, TouchableOpacity, View } from "react-native";
+
+// Icons
 import ChevronDown from "@/assets/svg/chevron-down.svg";
 import ChevronRight from "@/assets/svg/chevron-right.svg";
-import TaskLine from "@/assets/svg/dottedLine.svg";
 import Edit from "@/assets/svg/edit.svg";
 import Streak from "@/assets/svg/streak.svg";
+
+// Components
 import ChangeSessionTimeCard from "@/components/modals/ChangeSessionTimeCard";
+import QuickTaskModal from "@/components/modals/QuickTaskModal";
 import StartSessionBtn from "@/components/StartSessionBtn";
 import TodayProgress from "@/components/TodayProgress";
-import { useSessionStore } from "@/store/sessionState";
-import { useStreakStore } from "@/store/streakStore";
-import React, { useEffect, useRef, useState } from "react";
-import { Text, TouchableOpacity, View } from "react-native";
-import QuickTaskModal from "@/components/modals/QuickTaskModal";
+import QuoteCard from "@/components/modals/QuoteCard";
+
+// Store
+import {
+  FLOWS,
+  SESSION_TYPES,
+  useSessionStore,
+  type SessionType,
+} from "@/store/sessionState";
+
 
 export default function Focus() {
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  // Modal visibility states
   const [isQuickTaskModalVisible, setIsQuickTaskModalVisible] = useState(false);
-  const streak = useStreakStore((state) => state.streak);
+  const [isSessionTypeModalVisible, setIsSessionTypeModalVisible] =
+    useState(false);
+  const [isFlowModalVisible, setIsFlowModalVisible] = useState(false);
+  const [isTimeModalVisible, setIsTimeModalVisible] = useState(false);
+  const [showQuoteModal, setShowQuoteModal] = useState(false);
+
+  // Get session store state and actions
   const {
     duration,
     isRunning,
@@ -24,11 +40,66 @@ export default function Focus() {
     setDuration,
     completeSession,
     currentStreak,
+    sessionType,
+    setSessionType,
+    startFlow,
+    currentFlow,
+    currentFlowStep,
+    // completedPomodoros is available but not currently used
   } = useSessionStore();
-  const sessionType = useSessionStore((state) => state.sessionType);
-  const setSessionType = useSessionStore((state) => state.setSessionType);
+
+  // Timer reference
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Calculate duration in minutes
   const durationMinutes = Math.floor(duration / 60);
+  
+  // Track the last session ID we showed the quote for
+  const lastSessionId = useRef<string | null>(null);
+  
+  // Get the current session state
+  const currentSessionId = useSessionStore(state => state.sessionId);
+  
+  // Show quote modal at the start of each new session
+  useEffect(() => {
+    if (isRunning && currentSessionId && currentSessionId !== lastSessionId.current) {
+      lastSessionId.current = currentSessionId;
+      setShowQuoteModal(true);
+      
+      // Auto-close the modal after 3 seconds
+      const timer = setTimeout(() => {
+        setShowQuoteModal(false);
+      }, 3000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [isRunning, currentSessionId]);
+  
+  // Handle quote modal close
+  const handleQuoteModalClose = useCallback(() => {
+    setShowQuoteModal(false);
+  }, []);
+
+  // Handle session type selection
+  const handleSessionSelect = (type: SessionType) => {
+    setSessionType(type);
+    setIsSessionTypeModalVisible(false);
+  };
+
+  // Handle flow selection
+  const handleFlowSelect = (flowName: keyof typeof FLOWS) => {
+    startFlow(flowName);
+    setIsFlowModalVisible(false);
+  };
+
+  // Get flow progress if in a flow
+  const flowProgress = currentFlow
+    ? {
+        name: currentFlow,
+        current: currentFlowStep + 1,
+        total: FLOWS[currentFlow].length,
+      }
+    : null;
 
   // Handle timer countdown
   useEffect(() => {
@@ -46,9 +117,7 @@ export default function Focus() {
         setDuration((currentDuration: number) => {
           // If we reach 0 or below, end the session
           if (currentDuration <= 1) {
-            console.log("In here")
             cleanup();
-
             completeSession();
             return 0;
           }
@@ -66,159 +135,237 @@ export default function Focus() {
 
   // Update duration when session type changes - only when not running and not paused
   useEffect(() => {
-    if (!isRunning && !isPaused) {
-      // Reset duration based on session type when not running and not paused
-      if (sessionType === "Break") {
-        setDuration(5 * 60);
-      } else if (sessionType === "Study") {
-        setDuration(50 * 60);
-      } else {
-        setDuration(25 * 60);
-      }
+    if (!isRunning && !isPaused && !currentFlow) {
+      // Only update duration if not in a flow (flows manage their own durations)
+      setDuration(SESSION_TYPES[sessionType] || 25 * 60);
     }
-  }, [sessionType, isRunning, isPaused, setDuration]);
+  }, [sessionType, isRunning, isPaused, setDuration, currentFlow]);
 
+  // Format time as MM:SS
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
-  const [isTimeModalVisible, setIsTimeModalVisible] = useState(false);
-
-  const sessionTypes = ["Work", "Study", "Break"] as const;
-
-  const handleSessionSelect = (type: (typeof sessionTypes)[number]) => {
-    setSessionType(type);
-    setIsDropdownOpen(false);
-  };
 
   return (
     <View className="flex-1 bg-primary pb-24">
       {/* Progress and Streak */}
-      <View className="flex-row gap-1 mx-4 mt-4">
-        <View className="">
+      <View className="flex-row justify-between items-center mx-4 mt-4">
+        <View className="flex-row gap-1 items-center">
           <Streak width={23} />
-        </View>
-        <View className="items-center justify-center">
-          <Text className="text-text-primary font-SoraBold">
-            {currentStreak}
+          <Text className="text-text-primary text-sm font-SoraSemiBold">
+            {currentStreak} day streak
           </Text>
         </View>
+
+        {/* Flow Progress Indicator */}
+        {flowProgress && (
+          <View className="bg-secondary/20 px-3 py-1 rounded-full">
+            <Text className="text-text-primary text-xs font-SoraSemiBold">
+              {flowProgress.name} • {flowProgress.current}/{flowProgress.total}
+            </Text>
+          </View>
+        )}
       </View>
 
-      <View className="flex-1 justify-between">
-        {/* Session Selector */}
-        <View className="items-center">
-          <TouchableOpacity
-            className="flex-row gap-2 items-center px-4 py-2 rounded-lg bg-primary-700"
-            activeOpacity={0.7}
-            onPress={() => setIsDropdownOpen(!isDropdownOpen)}
-          >
-            <Text className="text-text-primary font-SoraBold text-2xl">
-              {sessionType}
-            </Text>
-            <ChevronDown
-              style={{
-                transform: [{ rotate: isDropdownOpen ? "180deg" : "0deg" }],
-              }}
-            />
-          </TouchableOpacity>
-
-          {isDropdownOpen && (
-            <View className="absolute top-16 w-40 bg-tab-bg rounded-xl shadow-xl z-10">
-              {sessionTypes.map((type) => (
-                <TouchableOpacity
-                  key={type}
-                  className={`px-4 py-3 ${
-                    type === sessionType ? "bg-primary-600" : ""
-                  }`}
-                  onPress={() => handleSessionSelect(type)}
+      <View className="flex-1">
+        {/* Main Content */}
+        <View className="flex-1 items-center px-4">
+          {/* Session Type Selector */}
+          <View className="w-full max-w-md mt-8 mb-4">
+            <View className="flex-row items-center justify-between w-full">
+              <View className="relative z-10 flex-1">
+                <Pressable
+                  onPress={() => setIsSessionTypeModalVisible(true)}
+                  className="flex-row items-center gap-3 bg-secondary/10 border border-primary/10 rounded-lg px-4 py-3"
                 >
-                  <Text className="text-text-primary font-Sora text-lg">
-                    {type}
+                  <Text className="text-text-primary text-base font-SoraSemiBold">
+                    {sessionType}
                   </Text>
-                </TouchableOpacity>
-              ))}
+                  <ChevronDown width={16} height={16} color="#2C3E50" />
+                </Pressable>
+
+                <Modal
+                  visible={isSessionTypeModalVisible}
+                  transparent={true}
+                  animationType="fade"
+                  statusBarTranslucent={true}
+                  onRequestClose={() => setIsSessionTypeModalVisible(false)}
+                >
+                  <Pressable
+                    className="absolute inset-0 bg-black/50 justify-center items-center p-4"
+                    onPress={() => setIsSessionTypeModalVisible(false)}
+                  >
+                    <View className="w-full max-w-xs bg-white rounded-xl overflow-hidden shadow-2xl">
+                      <ScrollView
+                        className="max-h-[60vh]"
+                        showsVerticalScrollIndicator={false}
+                      >
+                        {Object.keys(SESSION_TYPES).map((type) => (
+                          <Pressable
+                            key={type}
+                            onPress={() => {
+                              handleSessionSelect(type as SessionType);
+                              setIsSessionTypeModalVisible(false);
+                            }}
+                            className={`px-6 py-4 active:bg-gray-50 ${sessionType === type ? "bg-primary/5" : "bg-white"}`}
+                          >
+                            <Text
+                              className={`text-base ${
+                                sessionType === type
+                                  ? "text-text-primary font-SoraSemiBold"
+                                  : "text-text-secondary font-SoraRegular"
+                              }`}
+                            >
+                              {type}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  </Pressable>
+                </Modal>
+              </View>
+              <TouchableOpacity
+                onPress={() => setIsFlowModalVisible(true)}
+                className="ml-4"
+              >
+                <Text className="text-active-tab text-sm font-SoraSemiBold">
+                  Flows
+                </Text>
+              </TouchableOpacity>
             </View>
-          )}
+          </View>
+
+          {/* Spacer to push content up */}
+          <View className="flex-1 justify-center items-center w-full">
+            {/* Timer Display */}
+            <View className="items-center mb-8">
+              <TouchableOpacity
+                onPress={() =>
+                  !isRunning && !currentFlow && setIsTimeModalVisible(true)
+                }
+                activeOpacity={currentFlow ? 1 : 0.8}
+                className="items-center"
+              >
+                <Text className="text-text-primary text-7xl font-SoraBold mb-2">
+                  {formatTime(duration)}
+                </Text>
+                {!currentFlow && (
+                  <View className="flex-row items-center justify-center gap-2">
+                    <Text className="text-text-primary/60 text-base font-SoraSemiBold">
+                      {durationMinutes} min
+                    </Text>
+                    <Edit width={16} height={16} color="#ffffff99" />
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {/* Start/Pause Button */}
+            <View className="w-full items-center">
+              <View className="w-32">
+                <StartSessionBtn />
+              </View>
+            </View>
+          </View>
         </View>
 
-        {/* Session Timer */}
-        <View className="flex-row items-center justify-center gap-3">
-          <View className=" items-baseline justify-center flex-row">
-            <Text className="text-text-primary font-SoraBold text-8xl">
-              {isRunning || isPaused ? formatTime(duration) : durationMinutes}
+        {/* Bottom Section */}
+        <View className="w-full rounded-t-3xl px-6 pt-6 pb-8">
+          <View className="flex-row items-center justify-between mb-6">
+            <Text className="text-text-primary text-lg font-SoraSemiBold">
+              Today&apos;s Progress
             </Text>
-            <Text className="text-text-primary font-SoraBold text-4xl">
-              {isRunning || isPaused
-                ? ""
-                : durationMinutes >= 1
-                  ? "min"
-                  : "sec"}
-            </Text>
-          </View>
-          {isRunning || isPaused ? null : (
-            <TouchableOpacity onPress={() => setIsTimeModalVisible(true)}>
-              <Edit />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <View>
-          {/* upcoming session */}
-          <View className="flex-row items-center justify-center gap-3">
-            <View>
-              <Text className="text-text-secondary font-SoraBold">Next</Text>
-            </View>
-            <View>
-              <ChevronRight />
-            </View>
-            <View>
-              {/* Here the upcoming session has to be displayed it's dynamic */}
-              <Text className="text-text-secondary font-SoraBold">Break</Text>
-            </View>
-          </View>
-
-          {/* select task */}
-          <TouchableOpacity
-            className="flex-row items-center justify-center gap-2 mt-3"
-            activeOpacity={0.7}
-            onPress={() => setIsQuickTaskModalVisible(true)}
-          >
-            <View>
-              <Add />
-            </View>
-            <View>
-              {/* if no task is available show Pick a task otherwise show the active task */}
-              <Text className="text-text-primary font-SoraBold">
-                Pick a task
+            <TouchableOpacity
+              onPress={() => setIsQuickTaskModalVisible(true)}
+              className="flex-row items-center gap-1"
+            >
+              <Text className="text-accent text-sm font-SoraSemiBold">
+                Add Task
               </Text>
-              <TaskLine />
-            </View>
-          </TouchableOpacity>
-        </View>
+              <ChevronRight width={16} height={16} color="#5CE1E1" />
+            </TouchableOpacity>
+          </View>
 
-        {/* start session button */}
-        <View className="items-center justify-center">
-          <StartSessionBtn />
-        </View>
-
-        {/* Progress Stats */}
-        <View className="mx-4 pb-10">
           <TodayProgress />
         </View>
       </View>
 
+      {/* Modals */}
       <ChangeSessionTimeCard
         isVisible={isTimeModalVisible}
         onClose={() => setIsTimeModalVisible(false)}
         sessionType={sessionType}
       />
+
       <QuickTaskModal
         isVisible={isQuickTaskModalVisible}
         onClose={() => setIsQuickTaskModalVisible(false)}
-        sessionType={sessionType}
       />
+
+      {/* Flow Selection Modal */}
+      <Modal
+        visible={isFlowModalVisible}
+        transparent={true}
+        animationType="fade"
+        statusBarTranslucent={true}
+        onRequestClose={() => setIsFlowModalVisible(false)}
+      >
+        <Pressable 
+          className="absolute inset-0 bg-black/50 justify-center items-center p-4"
+          onPress={() => setIsFlowModalVisible(false)}
+        >
+          <Pressable 
+            className="w-full max-w-md bg-tab-bg rounded-xl overflow-hidden"
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View className="p-6 max-h-[80vh]">
+            <Text className="text-text-primary text-xl font-SoraSemiBold mb-4">
+              Select a Flow
+            </Text>
+            <ScrollView className="max-h-96">
+              <View className="gap-4">
+                {(
+                  Object.entries(FLOWS) as [
+                    keyof typeof FLOWS,
+                    { type: SessionType; duration: number }[],
+                  ][]
+                ).map(([flowName, flow]) => (
+                  <TouchableOpacity
+                    key={flowName}
+                    onPress={() => handleFlowSelect(flowName)}
+                    className="bg-secondary p-4 rounded-xl"
+                  >
+                    <Text className="text-text-primary text-lg font-SoraSemiBold mb-1">
+                      {flowName}
+                    </Text>
+                    <Text className="text-text-secondary text-sm">
+                      {flow.map((s) => s.type).join(" → ")}
+                    </Text>
+                    <Text className="text-text-secondary text-xs mt-2">
+                      {Math.floor(
+                        flow.reduce(
+                          (total: number, session) => total + session.duration,
+                          0
+                        ) / 60
+                      )}{" "}
+                      min total
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Quote Modal */}
+      {showQuoteModal && (
+        <QuoteCard onClose={handleQuoteModalClose} />
+      )}
     </View>
   );
 }

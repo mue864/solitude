@@ -21,6 +21,7 @@ module.exports = {
         SoraSemiBold: ["SoraSemiBold"],
         SoraExtraBold: ["SoraExtraBold"],
         Courgete: ["Courgete"],
+        WorkSansItalic: ["WorkSansItalic"],
       }
     },
   },

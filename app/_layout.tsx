@@ -18,6 +18,8 @@ export default function RootLayout() {
     SoraSemiBold: require("@/assets/fonts/Sora-SemiBold.ttf"),
     SoraExtraBold: require("@/assets/fonts/Sora-ExtraBold.ttf"),
     Courgete: require("@/assets/fonts/Courgette.ttf"),
+    WorkSansItalic: require("@/assets/fonts/WorkSans-MediumItalic.ttf"),
+    
   });
 
   const onLayoutRootView = useCallback(async () => {
