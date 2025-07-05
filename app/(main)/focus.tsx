@@ -86,38 +86,32 @@ export default function Focus() {
     });
 
     if (!isRunning || !currentSessionId) {
-      console.log('Not showing quote: isRunning or currentSessionId is falsy', { isRunning, currentSessionId });
       return;
     }
     
     // Always show quote for a new session
     if (currentSessionId !== lastSessionId.current) {
-      console.log('New session detected, showing quote card');
       lastSessionId.current = currentSessionId;
       
       // Small delay to ensure state is fully updated
       const showQuote = setTimeout(() => {
-        console.log('Setting showQuoteModal to true');
         setShowQuoteModal(true);
         
         // Auto-close the modal after 3 seconds
         const hideQuote = setTimeout(() => {
-          console.log('Auto-hiding quote card');
           setShowQuoteModal(false);
         }, 3000);
         
         return () => {
-          console.log('Cleaning up hideQuote timeout');
+
           clearTimeout(hideQuote);
         };
       }, 100);
       
       return () => {
-        console.log('Cleaning up showQuote timeout');
         clearTimeout(showQuote);
       };
     } else {
-      console.log('Not a new session, not showing quote');
     }
   }, [isRunning, currentSessionId]);
 
