@@ -84,6 +84,7 @@ export interface SessionState {
   resetProgress: () => void;
   startFlow: (flowName: FlowName) => void;
   nextSession: () => void;
+  checkAndResetStreak: () => void;
 };
 
 export const useSessionStore = create<SessionState>()(
@@ -100,7 +101,7 @@ export const useSessionStore = create<SessionState>()(
       completedPomodoros: 0,
       completedSessions: 0,
       missedSessions: 0,
-      totalSessions: 0,
+      totalSessions: 8,
       currentStreak: 0,
       longestStreak: 0,
       lastSessionDate: null,
@@ -247,59 +248,90 @@ export const useSessionStore = create<SessionState>()(
           
           // Calculate streak if this is the first session of the day
           let newStreak = state.currentStreak;
-          if (state.lastSessionDate !== today) {
-            newStreak =
-              state.lastSessionDate === yesterdayStr
-                ? state.currentStreak + 1
-                : state.lastSessionDate && state.lastSessionDate < yesterdayStr
-                  ? 1 // Missed a day, reset to 1
-                  : state.currentStreak; // No change if same day
-          }
-
-          // Check if we've reached the session limit
-          const hasReachedLimit = state.completedSessions >= state.totalSessions;
+          let shouldUpdateStreak = false;
           
-          // Prepare the base update
+          console.log('--- STREAK DEBUG START ---');
+          console.log('Current streak:', state.currentStreak);
+          console.log('Last session date:', state.lastSessionDate);
+          console.log('Today:', today);
+          console.log('Yesterday:', yesterdayStr);
+          
+          // If this is the first session ever or we haven't had a session today
+          if (!state.lastSessionDate || state.lastSessionDate !== today) {
+            shouldUpdateStreak = true;
+            
+            // If this is the first session ever
+            if (!state.lastSessionDate) {
+              console.log('First session ever, setting streak to 1');
+              newStreak = 1;
+            }
+            // If we've had a session before and it's a new day
+            else if (state.lastSessionDate !== today) {
+              console.log('Updating streak. Current streak:', state.currentStreak);
+              
+              // If we had a session yesterday, increment the streak
+              if (state.lastSessionDate === yesterdayStr) {
+                newStreak = state.currentStreak + 1;
+                console.log('Incremented streak to:', newStreak);
+              } 
+              // If we missed one day, keep the current streak (allow one day of leeway)
+              else if (state.lastSessionDate < yesterdayStr) {
+                const twoDaysAgo = new Date();
+                twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+                const twoDaysAgoStr = twoDaysAgo.toISOString().split("T")[0];
+                
+                console.log('Two days ago:', twoDaysAgoStr);
+                console.log('Last session was on:', state.lastSessionDate);
+                
+                if (state.lastSessionDate >= twoDaysAgoStr) {
+                  newStreak = state.currentStreak; // Keep current streak if only one day missed
+                  console.log('Kept current streak:', newStreak);
+                } else {
+                  newStreak = 1; // Reset streak if more than one day missed
+                  console.log('Reset streak to 1');
+                }
+              }
+            }
+          } else {
+            console.log('Session already completed today, not updating streak');
+          }
+          
+          console.log('New streak will be:', newStreak);
+          console.log('--- STREAK DEBUG END ---');
+          
+          // Update the state
           const update: Partial<SessionState> = {
-            isRunning: false, // Will be set to true if continuing a flow
-            isPaused: false,
             completedPomodoros,
             lastSessionDate: today,
-            currentStreak: newStreak,
-            longestStreak: Math.max(state.longestStreak, newStreak),
+            completedSessions: state.completedSessions + 1,
+            isRunning: false,
+            isPaused: false,
           };
           
-          // If we haven't reached the session limit, increment completed sessions
-          if (!hasReachedLimit) {
-            update.completedSessions = state.completedSessions + 1;
-            update.missedSessions = Math.min(
-              state.missedSessions,
-              state.totalSessions - (state.completedSessions + 1)
-            );
+          // Only update streak if needed
+          if (shouldUpdateStreak) {
+            update.currentStreak = newStreak;
+            update.longestStreak = Math.max(state.longestStreak, newStreak);
           }
           
           // If we're in a flow, move to the next session
-          if (state.currentFlow) {
-            const flow = FLOWS[state.currentFlow];
-            const nextStep = state.currentFlowStep + 1;
+          if (state.currentFlow && state.currentFlow in FLOWS) {
+            const currentFlow = state.currentFlow as keyof typeof FLOWS;
+            update.currentFlowStep = state.currentFlowStep + 1;
             
-            if (nextStep < flow.length) {
-              update.currentFlowStep = nextStep;
-              update.sessionType = flow[nextStep].type as SessionType; // Ensure type safety
-              update.duration = flow[nextStep].duration;
-              // Auto-start the next session in the flow
-              update.isRunning = true;
-            } else {
-              // End of flow
+            // If we've completed all sessions in the flow
+            if (state.currentFlowStep >= FLOWS[currentFlow].length) {
               update.currentFlow = null;
               update.currentFlowStep = 0;
+            } else {
+              // Set up next session in flow
+              const nextSession = FLOWS[currentFlow][state.currentFlowStep];
+              update.sessionType = nextSession.type as SessionType;
+              update.duration = nextSession.duration;
             }
           }
           
-          return {
-            ...state,
-            ...update,
-          };
+          return update;
         }),
       // Mark the current session as missed
       missSession: () =>
@@ -353,14 +385,22 @@ export const useSessionStore = create<SessionState>()(
 
           const lastSession = new Date(state.lastSessionDate);
           const today = new Date();
+          
+          // Reset time parts for accurate day comparison
+          lastSession.setHours(0, 0, 0, 0);
+          const todayReset = new Date(today);
+          todayReset.setHours(0, 0, 0, 0);
+          
           const dayDifference = Math.floor(
-            (today.getTime() - lastSession.getTime()) / (1000 * 60 * 60 * 24)
+            (todayReset.getTime() - lastSession.getTime()) / (1000 * 60 * 60 * 24)
           );
-          if (dayDifference >= 1) {
+          
+          // If it's been more than 1 day since the last session, reset the streak
+          if (dayDifference > 1) {
             return {
               ...state,
               currentStreak: 0,
-              lastSessionDate: today.toISOString().split("T")[0],
+              lastSessionDate: todayReset.toISOString().split("T")[0],
             };
           }
           return state;

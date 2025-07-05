@@ -66,29 +66,14 @@ export default function Focus() {
   // Get the current session state
   const currentSessionId = useSessionStore((state) => state.sessionId);
 
-  // Debug log for session state changes
-  useEffect(() => {
-    console.log('Session state changed:', {
-      isRunning,
-      currentSessionId,
-      lastSessionId: lastSessionId.current,
-      shouldShowQuote: isRunning && currentSessionId && currentSessionId !== lastSessionId.current
-    });
-  }, [isRunning, currentSessionId]);
+
 
   // Show quote modal at the start of each new session
   useEffect(() => {
-    console.log('Quote effect running. Current state:', {
-      isRunning,
-      currentSessionId,
-      lastSessionId: lastSessionId.current,
-      showQuoteModal
-    });
-
     if (!isRunning || !currentSessionId) {
       return;
     }
-    
+
     // Always show quote for a new session
     if (currentSessionId !== lastSessionId.current) {
       lastSessionId.current = currentSessionId;
@@ -153,6 +138,8 @@ export default function Focus() {
 
     // Only run the timer if running and not paused
     if (isRunning && !isPaused) {
+      cleanup(); // Clear any existing timer to prevent duplicates
+      
       timerRef.current = setInterval(() => {
         setDuration((currentDuration: number) => {
           // If we reach 0 or below, end the session
@@ -171,7 +158,7 @@ export default function Focus() {
 
     // Clean up on unmount or when dependencies change
     return cleanup;
-  }, [isRunning, isPaused, setDuration, completeSession]);
+  }, [isRunning, isPaused, setDuration, completeSession, currentSessionId, currentFlowStep]);
 
   // Update duration when session type changes - only when not running and not paused
   useEffect(() => {

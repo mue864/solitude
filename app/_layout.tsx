@@ -6,6 +6,7 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect } from "react";
 import { View, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useSessionStore } from "@/store/sessionState";
 
 // load splashscreen
 SplashScreen.preventAutoHideAsync();
@@ -19,7 +20,6 @@ export default function RootLayout() {
     SoraExtraBold: require("@/assets/fonts/Sora-ExtraBold.ttf"),
     Courgete: require("@/assets/fonts/Courgette.ttf"),
     WorkSansItalic: require("@/assets/fonts/WorkSans-MediumItalic.ttf"),
-    
   });
 
   const onLayoutRootView = useCallback(async () => {
@@ -33,6 +33,13 @@ export default function RootLayout() {
       onLayoutRootView();
     }
   }, [fontsLoaded, onLayoutRootView]);
+
+  // Check streak when the app loads
+  const checkAndResetStreak = useSessionStore(state => state.checkAndResetStreak);
+  
+  useEffect(() => {
+    checkAndResetStreak();
+  }, [checkAndResetStreak]);
 
   return (
     <View style={styles.container} onLayout={onLayoutRootView}>
