@@ -1,5 +1,12 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
-import { Modal, Pressable, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 // Icons
 import ChevronDown from "@/assets/svg/chevron-down.svg";
@@ -10,9 +17,9 @@ import Streak from "@/assets/svg/streak.svg";
 // Components
 import ChangeSessionTimeCard from "@/components/modals/ChangeSessionTimeCard";
 import QuickTaskModal from "@/components/modals/QuickTaskModal";
+import QuoteCard from "@/components/modals/QuoteCard";
 import StartSessionBtn from "@/components/StartSessionBtn";
 import TodayProgress from "@/components/TodayProgress";
-import QuoteCard from "@/components/modals/QuoteCard";
 
 // Store
 import {
@@ -21,7 +28,6 @@ import {
   useSessionStore,
   type SessionType,
 } from "@/store/sessionState";
-
 
 export default function Focus() {
   // Modal visibility states
@@ -50,31 +56,71 @@ export default function Focus() {
 
   // Timer reference
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  
+
   // Calculate duration in minutes
   const durationMinutes = Math.floor(duration / 60);
-  
+
   // Track the last session ID we showed the quote for
   const lastSessionId = useRef<string | null>(null);
-  
+
   // Get the current session state
-  const currentSessionId = useSessionStore(state => state.sessionId);
-  
+  const currentSessionId = useSessionStore((state) => state.sessionId);
+
+  // Debug log for session state changes
+  useEffect(() => {
+    console.log('Session state changed:', {
+      isRunning,
+      currentSessionId,
+      lastSessionId: lastSessionId.current,
+      shouldShowQuote: isRunning && currentSessionId && currentSessionId !== lastSessionId.current
+    });
+  }, [isRunning, currentSessionId]);
+
   // Show quote modal at the start of each new session
   useEffect(() => {
-    if (isRunning && currentSessionId && currentSessionId !== lastSessionId.current) {
+    console.log('Quote effect running. Current state:', {
+      isRunning,
+      currentSessionId,
+      lastSessionId: lastSessionId.current,
+      showQuoteModal
+    });
+
+    if (!isRunning || !currentSessionId) {
+      console.log('Not showing quote: isRunning or currentSessionId is falsy', { isRunning, currentSessionId });
+      return;
+    }
+    
+    // Always show quote for a new session
+    if (currentSessionId !== lastSessionId.current) {
+      console.log('New session detected, showing quote card');
       lastSessionId.current = currentSessionId;
-      setShowQuoteModal(true);
       
-      // Auto-close the modal after 3 seconds
-      const timer = setTimeout(() => {
-        setShowQuoteModal(false);
-      }, 3000);
+      // Small delay to ensure state is fully updated
+      const showQuote = setTimeout(() => {
+        console.log('Setting showQuoteModal to true');
+        setShowQuoteModal(true);
+        
+        // Auto-close the modal after 3 seconds
+        const hideQuote = setTimeout(() => {
+          console.log('Auto-hiding quote card');
+          setShowQuoteModal(false);
+        }, 3000);
+        
+        return () => {
+          console.log('Cleaning up hideQuote timeout');
+          clearTimeout(hideQuote);
+        };
+      }, 100);
       
-      return () => clearTimeout(timer);
+      return () => {
+        console.log('Cleaning up showQuote timeout');
+        clearTimeout(showQuote);
+      };
+    } else {
+      console.log('Not a new session, not showing quote');
     }
   }, [isRunning, currentSessionId]);
-  
+
   // Handle quote modal close
   const handleQuoteModalClose = useCallback(() => {
     setShowQuoteModal(false);
@@ -313,59 +359,58 @@ export default function Focus() {
         statusBarTranslucent={true}
         onRequestClose={() => setIsFlowModalVisible(false)}
       >
-        <Pressable 
+        <Pressable
           className="absolute inset-0 bg-black/50 justify-center items-center p-4"
           onPress={() => setIsFlowModalVisible(false)}
         >
-          <Pressable 
+          <Pressable
             className="w-full max-w-md bg-tab-bg rounded-xl overflow-hidden"
             onPress={(e) => e.stopPropagation()}
           >
             <View className="p-6 max-h-[80vh]">
-            <Text className="text-text-primary text-xl font-SoraSemiBold mb-4">
-              Select a Flow
-            </Text>
-            <ScrollView className="max-h-96">
-              <View className="gap-4">
-                {(
-                  Object.entries(FLOWS) as [
-                    keyof typeof FLOWS,
-                    { type: SessionType; duration: number }[],
-                  ][]
-                ).map(([flowName, flow]) => (
-                  <TouchableOpacity
-                    key={flowName}
-                    onPress={() => handleFlowSelect(flowName)}
-                    className="bg-secondary p-4 rounded-xl"
-                  >
-                    <Text className="text-text-primary text-lg font-SoraSemiBold mb-1">
-                      {flowName}
-                    </Text>
-                    <Text className="text-text-secondary text-sm">
-                      {flow.map((s) => s.type).join(" → ")}
-                    </Text>
-                    <Text className="text-text-secondary text-xs mt-2">
-                      {Math.floor(
-                        flow.reduce(
-                          (total: number, session) => total + session.duration,
-                          0
-                        ) / 60
-                      )}{" "}
-                      min total
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
+              <Text className="text-text-primary text-xl font-SoraSemiBold mb-4">
+                Select a Flow
+              </Text>
+              <ScrollView className="max-h-96">
+                <View className="gap-4">
+                  {(
+                    Object.entries(FLOWS) as [
+                      keyof typeof FLOWS,
+                      { type: SessionType; duration: number }[],
+                    ][]
+                  ).map(([flowName, flow]) => (
+                    <TouchableOpacity
+                      key={flowName}
+                      onPress={() => handleFlowSelect(flowName)}
+                      className="bg-secondary p-4 rounded-xl"
+                    >
+                      <Text className="text-text-primary text-lg font-SoraSemiBold mb-1">
+                        {flowName}
+                      </Text>
+                      <Text className="text-text-secondary text-sm">
+                        {flow.map((s) => s.type).join(" → ")}
+                      </Text>
+                      <Text className="text-text-secondary text-xs mt-2">
+                        {Math.floor(
+                          flow.reduce(
+                            (total: number, session) =>
+                              total + session.duration,
+                            0
+                          ) / 60
+                        )}{" "}
+                        min total
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
             </View>
           </Pressable>
         </Pressable>
       </Modal>
 
       {/* Quote Modal */}
-      {showQuoteModal && (
-        <QuoteCard onClose={handleQuoteModalClose} />
-      )}
+      {showQuoteModal && <QuoteCard onClose={handleQuoteModalClose} />}
     </View>
   );
 }

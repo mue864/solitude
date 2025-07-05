@@ -206,10 +206,12 @@ export const useSessionStore = create<SessionState>()(
       },
       
       // Resume the current session
-      resumeSession: () => set({ 
-        isRunning: true, 
-        isPaused: false
-      }),
+      resumeSession: () => set((state) => ({
+        isRunning: true,
+        isPaused: false,
+        // Generate new sessionId if this is a new session (not resuming from pause)
+        sessionId: state.isPaused ? state.sessionId : Date.now().toString()
+      })),
       
       // Reset to default state
       reset: () =>
