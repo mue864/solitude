@@ -32,10 +32,10 @@ const ChangeSessionTimeCard = ({
 
   useEffect(() => {
     if (isVisible) {
-      // Get duration in minutes from SESSION_TYPES (which is in seconds)
-      const durationInMinutes = Math.floor(SESSION_TYPES[sessionType] / 60);
-      const mins = Math.floor(durationInMinutes);
-      const secs = durationInMinutes % 60;
+      // Get duration from SESSION_TYPES (which is in seconds)
+      const totalSeconds = SESSION_TYPES[sessionType];
+      const mins = Math.floor(totalSeconds / 60);
+      const secs = totalSeconds % 60;
       setMinutes(mins.toString());
       setSeconds(secs.toString().padStart(2, "0"));
     }

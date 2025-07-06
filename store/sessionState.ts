@@ -69,6 +69,16 @@ export interface SessionState {
   currentFlowStep: number;
   sessionId: string; // Unique ID for each session
 
+  // Flow completion modal state
+  showFlowCompletionModal: boolean;
+  flowCompletionData: {
+    completedSessions: number;
+    totalSessions: number;
+    nextSessionType: string;
+    nextSessionDuration: number;
+    currentFlowName: string;
+  } | null;
+
   // Stats
   completedPomodoros: number;
   completedSessions: number;
@@ -90,6 +100,12 @@ export interface SessionState {
   startFlow: (flowName: FlowName) => void;
   nextSession: () => void;
   checkAndResetStreak: () => void;
+
+  // Flow completion actions
+  continueFlow: () => void;
+  pauseFlow: () => void;
+  endFlow: () => void;
+  hideFlowCompletionModal: () => void;
 }
 
 export const useSessionStore = create<SessionState>()(
@@ -103,6 +119,8 @@ export const useSessionStore = create<SessionState>()(
       currentFlow: null,
       currentFlowStep: 0,
       sessionId: Date.now().toString(),
+      showFlowCompletionModal: false,
+      flowCompletionData: null,
       completedPomodoros: 0,
       completedSessions: 0,
       missedSessions: 0,
@@ -265,24 +283,6 @@ export const useSessionStore = create<SessionState>()(
             completedPomodoros += 1;
           }
 
-          // Handle flow logic first
-          if (state.currentFlow && state.currentFlow in FLOWS) {
-            const flow = FLOWS[state.currentFlow];
-            const nextStep = state.currentFlowStep + 1;
-
-            if (nextStep < flow.length) {
-              // Move to next session in flow
-              newFlowStep = nextStep;
-              newSessionType = flow[nextStep].type as SessionType;
-              newDuration = flow[nextStep].duration;
-              shouldStartNextSession = true;
-            } else {
-              // End of flow
-              newFlow = null;
-              newFlowStep = 0;
-            }
-          }
-
           // Calculate streak if this is the first session of the day
           let newStreak = state.currentStreak;
           let shouldUpdateStreak = false;
@@ -314,18 +314,82 @@ export const useSessionStore = create<SessionState>()(
             }
           }
 
-          // Update the state
+          // Handle flow logic first
+          if (state.currentFlow && state.currentFlow in FLOWS) {
+            const flow = FLOWS[state.currentFlow];
+            const nextStep = state.currentFlowStep + 1;
+
+            if (nextStep < flow.length) {
+              // Update the session data for the next step
+              newFlowStep = nextStep;
+              newSessionType = flow[nextStep].type as SessionType;
+              newDuration = flow[nextStep].duration;
+              
+              // Show flow completion modal instead of auto-starting
+              return {
+                ...state,
+                sessionType: newSessionType,
+                duration: newDuration,
+                currentFlow: newFlow,
+                currentFlowStep: newFlowStep,
+                isRunning: false, // Don't auto-start
+                isPaused: false,
+                completedPomodoros,
+                lastSessionDate: today,
+                completedSessions: state.completedSessions + 1,
+                sessionId: Date.now().toString(),
+                showFlowCompletionModal: true,
+                flowCompletionData: {
+                  completedSessions: nextStep, // nextStep is already the number of completed sessions
+                  totalSessions: flow.length,
+                  nextSessionType: flow[nextStep].type,
+                  nextSessionDuration: flow[nextStep].duration,
+                  currentFlowName: state.currentFlow,
+                },
+                ...(shouldUpdateStreak && {
+                  currentStreak: newStreak,
+                  longestStreak: Math.max(state.longestStreak, newStreak),
+                }),
+              };
+            } else {
+              // End of flow - show completion modal for the last session
+              return {
+                ...state,
+                currentFlow: null,
+                currentFlowStep: 0,
+                isRunning: false,
+                isPaused: false,
+                completedPomodoros,
+                lastSessionDate: today,
+                completedSessions: state.completedSessions + 1,
+                sessionId: Date.now().toString(),
+                showFlowCompletionModal: true,
+                flowCompletionData: {
+                  completedSessions: flow.length,
+                  totalSessions: flow.length,
+                  nextSessionType: "Flow Complete",
+                  nextSessionDuration: 0,
+                  currentFlowName: state.currentFlow,
+                },
+                ...(shouldUpdateStreak && {
+                  currentStreak: newStreak,
+                  longestStreak: Math.max(state.longestStreak, newStreak),
+                }),
+              };
+            }
+          }
+
+          // Update the state for non-flow sessions
           const update: Partial<SessionState> = {
             sessionType: newSessionType,
             duration: newDuration,
             currentFlow: newFlow,
             currentFlowStep: newFlowStep,
-            isRunning: shouldStartNextSession, // Auto-start next session in flow
+            isRunning: shouldStartNextSession,
             isPaused: false,
             completedPomodoros,
             lastSessionDate: today,
             completedSessions: state.completedSessions + 1,
-            // Generate a new session ID to force timer re-initialization
             sessionId: Date.now().toString(),
           };
 
@@ -411,6 +475,46 @@ export const useSessionStore = create<SessionState>()(
           }
           return state;
         }),
+
+      // Flow completion actions
+      continueFlow: () =>
+        set((state) => ({
+          ...state,
+          isRunning: true,
+          isPaused: false,
+          showFlowCompletionModal: false,
+          flowCompletionData: null,
+          sessionId: Date.now().toString(),
+        })),
+
+      pauseFlow: () =>
+        set((state) => ({
+          ...state,
+          isRunning: false,
+          isPaused: true,
+          showFlowCompletionModal: false,
+          flowCompletionData: null,
+        })),
+
+      endFlow: () =>
+        set((state) => ({
+          ...state,
+          currentFlow: null,
+          currentFlowStep: 0,
+          isRunning: false,
+          isPaused: false,
+          showFlowCompletionModal: false,
+          flowCompletionData: null,
+          sessionType: "Classic",
+          duration: SESSION_TYPES["Classic"],
+        })),
+
+      hideFlowCompletionModal: () =>
+        set((state) => ({
+          ...state,
+          showFlowCompletionModal: false,
+          flowCompletionData: null,
+        })),
     }),
     {
       name: "session-store",

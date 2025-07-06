@@ -18,6 +18,7 @@ import Streak from "@/assets/svg/streak.svg";
 import ChangeSessionTimeCard from "@/components/modals/ChangeSessionTimeCard";
 import QuickTaskModal from "@/components/modals/QuickTaskModal";
 import QuoteCard from "@/components/modals/QuoteCard";
+import FlowCompletionModal from "@/components/modals/FlowCompletionModal";
 import StartSessionBtn from "@/components/StartSessionBtn";
 import TodayProgress from "@/components/TodayProgress";
 
@@ -56,6 +57,9 @@ export default function Focus() {
     currentFlow,
     currentFlowStep,
     resumeSession,
+    showFlowCompletionModal,
+    flowCompletionData,
+    hideFlowCompletionModal,
     // completedPomodoros is available but not currently used
   } = useSessionStore();
 
@@ -197,9 +201,10 @@ export default function Focus() {
       // Clear any running timers when paused
       cleanup();
       return;
-    } else if (!isRunning && currentFlow && currentFlowStep > 0) {
+    } else if (!isRunning && currentFlow && currentFlowStep > 0 && !showFlowCompletionModal) {
       // If we're in a flow and not running, but should be, start the timer
       // This handles the case when we transition to a new session in the flow
+      // But don't start if the flow completion modal is visible
       const timerId = setTimeout(() => {
         resumeSession();
       }, 0);
@@ -217,6 +222,7 @@ export default function Focus() {
     currentFlow,
     currentFlowStep,
     resumeSession,
+    showFlowCompletionModal,
   ]);
 
   // Update duration when session type changes - only when not running and not paused
@@ -362,10 +368,7 @@ export default function Focus() {
 
         {/* Bottom Section */}
         <View className="w-full rounded-t-3xl px-6 pt-6 pb-8">
-          <View className="flex-row items-center justify-between mb-6">
-            <Text className="text-text-primary text-lg font-SoraSemiBold">
-              Today&apos;s Progress
-            </Text>
+          <View className="flex-row items-center justify-end mb-4">
             <TouchableOpacity
               onPress={() => setIsQuickTaskModalVisible(true)}
               className="flex-row items-center gap-1"
@@ -475,6 +478,15 @@ export default function Focus() {
 
       {/* Quote Modal */}
       {showQuoteModal && <QuoteCard onClose={handleQuoteModalClose} />}
+
+      {/* Flow Completion Modal */}
+      {showFlowCompletionModal && flowCompletionData && (
+        <FlowCompletionModal
+          isVisible={showFlowCompletionModal}
+          onClose={hideFlowCompletionModal}
+          data={flowCompletionData}
+        />
+      )}
     </View>
   );
 }
