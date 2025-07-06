@@ -324,7 +324,7 @@ export const useSessionStore = create<SessionState>()(
               newFlowStep = nextStep;
               newSessionType = flow[nextStep].type as SessionType;
               newDuration = flow[nextStep].duration;
-              
+
               // Show flow completion modal instead of auto-starting
               return {
                 ...state,

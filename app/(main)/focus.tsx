@@ -1,5 +1,9 @@
+import { useTaskStore } from "@/store/taskStore";
+import { Ionicons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Animated,
+  Easing,
   Modal,
   Pressable,
   ScrollView,
@@ -10,15 +14,14 @@ import {
 
 // Icons
 import ChevronDown from "@/assets/svg/chevron-down.svg";
-import ChevronRight from "@/assets/svg/chevron-right.svg";
 import Edit from "@/assets/svg/edit.svg";
 import Streak from "@/assets/svg/streak.svg";
 
 // Components
 import ChangeSessionTimeCard from "@/components/modals/ChangeSessionTimeCard";
+import FlowCompletionModal from "@/components/modals/FlowCompletionModal";
 import QuickTaskModal from "@/components/modals/QuickTaskModal";
 import QuoteCard from "@/components/modals/QuoteCard";
-import FlowCompletionModal from "@/components/modals/FlowCompletionModal";
 import StartSessionBtn from "@/components/StartSessionBtn";
 import TodayProgress from "@/components/TodayProgress";
 
@@ -42,6 +45,10 @@ export default function Focus() {
   const [isFlowModalVisible, setIsFlowModalVisible] = useState(false);
   const [isTimeModalVisible, setIsTimeModalVisible] = useState(false);
   const [showQuoteModal, setShowQuoteModal] = useState(false);
+
+  // Animation for TodayProgress
+  const todayProgressAnim = useRef(new Animated.Value(1)).current;
+  const flowContextAnim = useRef(new Animated.Value(0)).current;
 
   // Get session store state and actions
   const {
@@ -153,7 +160,7 @@ export default function Focus() {
 
   // Handle flow selection
   const handleFlowSelect = (flowName: string) => {
-    startFlow(flowName);
+    startFlow(flowName as FlowName);
     setIsFlowModalVisible(false);
   };
 
@@ -194,14 +201,19 @@ export default function Focus() {
           return currentDuration - 1;
         });
       }, 1000);
-      
+
       // Clear the timer when paused or stopped
       return cleanup;
     } else if (isPaused) {
       // Clear any running timers when paused
       cleanup();
       return;
-    } else if (!isRunning && currentFlow && currentFlowStep > 0 && !showFlowCompletionModal) {
+    } else if (
+      !isRunning &&
+      currentFlow &&
+      currentFlowStep > 0 &&
+      !showFlowCompletionModal
+    ) {
       // If we're in a flow and not running, but should be, start the timer
       // This handles the case when we transition to a new session in the flow
       // But don't start if the flow completion modal is visible
@@ -240,23 +252,91 @@ export default function Focus() {
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
+  const currentTaskId = useTaskStore((s) => s.currentTaskId);
+  const tasks = useTaskStore((s) => s.tasks);
+  const setCurrentTask = useTaskStore((s) => s.setCurrentTask);
+  const clearCurrentTask = useTaskStore((s) => s.clearCurrentTask);
+  const completeCurrentTask = useTaskStore((s) => s.completeCurrentTask);
+  const currentTask = tasks.find((t) => t.id === currentTaskId);
+
+  const [cardWidth] = useState(new Animated.Value(currentTask ? 320 : 120));
+
+  useEffect(() => {
+    Animated.timing(cardWidth, {
+      toValue: currentTask ? 320 : 120,
+      duration: 250,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [currentTask]);
+
+  // Animate TodayProgress and Flow context when Flow state changes
+  useEffect(() => {
+    if (currentFlow) {
+      // Fade out TodayProgress and fade in Flow context when Flow starts
+      Animated.parallel([
+        Animated.timing(todayProgressAnim, {
+          toValue: 0,
+          duration: 300,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(flowContextAnim, {
+          toValue: 1,
+          duration: 300,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      // Fade in TodayProgress and fade out Flow context when Flow ends
+      Animated.parallel([
+        Animated.timing(todayProgressAnim, {
+          toValue: 1,
+          duration: 300,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(flowContextAnim, {
+          toValue: 0,
+          duration: 300,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [currentFlow, todayProgressAnim, flowContextAnim]);
+
   return (
-    <View className="flex-1 bg-primary pb-24">
+    <View className="flex-1 bg-primary pb-20">
       {/* Streak and Flow Indicator */}
       <View className="flex-row justify-between items-center mx-4 mt-4">
-        <View className="flex-row gap-1 items-center">
-          <Streak width={23} />
-          <Text className="text-text-primary text-sm font-SoraSemiBold">
-            {currentStreak} day streak
-          </Text>
+        <View
+          className="flex-row gap-2 items-center bg-white dark:bg-gray-800 rounded-xl px-4 py-3 border border-gray-100 dark:border-gray-700"
+          style={{
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.08,
+            shadowRadius: 8,
+            elevation: 4,
+          }}
+        >
+          <View className="flex-row items-center gap-2">
+            <View className="w-1.5 h-1.5 bg-orange-500 rounded-full" />
+            <Streak width={20} />
+            <Text className="text-text-primary text-sm font-SoraSemiBold">
+              {currentStreak} day streak
+            </Text>
+          </View>
         </View>
       </View>
 
       <View className="flex-1">
         {/* Main Content */}
+
         <View className="flex-1 items-center px-4">
           {/* Session Type and Flow Selector */}
-          <View className="w-full max-w-md mt-8 mb-4">
+          <View className="w-full max-w-md mt-4 mb-4">
             {currentFlow ? (
               <View className="w-full px-4">
                 <FlowIndicator
@@ -271,11 +351,21 @@ export default function Focus() {
                 <View className="relative z-10 flex-1">
                   <Pressable
                     onPress={() => setIsSessionTypeModalVisible(true)}
-                    className="flex-row items-center gap-3 bg-secondary/10 border border-primary/10 rounded-lg px-4 py-3"
+                    className="flex-row items-center justify-between gap-3 bg-white dark:bg-gray-800 rounded-xl px-4 py-3 border border-gray-100 dark:border-gray-700"
+                    style={{
+                      shadowColor: "#000",
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.08,
+                      shadowRadius: 8,
+                      elevation: 4,
+                    }}
                   >
-                    <Text className="text-text-primary text-base font-SoraSemiBold">
-                      {sessionType}
-                    </Text>
+                    <View className="flex-row items-center  gap-2">
+                      <View className="w-1.5 h-1.5 bg-purple-500 rounded-full" />
+                      <Text className="text-text-primary text-base font-SoraSemiBold">
+                        {sessionType}
+                      </Text>
+                    </View>
                     <ChevronDown width={16} height={16} color="#2C3E50" />
                   </Pressable>
 
@@ -290,7 +380,21 @@ export default function Focus() {
                       className="absolute inset-0 bg-black/50 justify-center items-center p-4"
                       onPress={() => setIsSessionTypeModalVisible(false)}
                     >
-                      <View className="w-full max-w-xs bg-white rounded-xl overflow-hidden shadow-2xl">
+                      <View
+                        className="w-full max-w-xs bg-white dark:bg-gray-800 rounded-xl overflow-hidden"
+                        style={{
+                          shadowColor: "#000",
+                          shadowOffset: { width: 0, height: 8 },
+                          shadowOpacity: 0.15,
+                          shadowRadius: 16,
+                          elevation: 8,
+                        }}
+                      >
+                        <View className="p-4 border-b border-gray-100 dark:border-gray-700">
+                          <Text className="text-text-primary text-lg font-SoraSemiBold text-center">
+                            Session Type
+                          </Text>
+                        </View>
                         <ScrollView
                           className="max-h-[60vh]"
                           showsVerticalScrollIndicator={false}
@@ -302,13 +406,17 @@ export default function Focus() {
                                 handleSessionSelect(type as SessionType);
                                 setIsSessionTypeModalVisible(false);
                               }}
-                              className={`px-6 py-4 active:bg-gray-50 ${sessionType === type ? "bg-primary/5" : "bg-white"}`}
+                              className={`px-6 py-4 active:bg-gray-50 dark:active:bg-gray-700 ${
+                                sessionType === type
+                                  ? "bg-purple-50 dark:bg-purple-900/20 border-l-4 border-purple-500"
+                                  : "bg-white dark:bg-gray-800"
+                              }`}
                             >
                               <Text
                                 className={`text-base ${
                                   sessionType === type
-                                    ? "text-text-primary font-SoraSemiBold"
-                                    : "text-text-secondary font-SoraRegular"
+                                    ? "text-purple-600 dark:text-purple-400 font-SoraSemiBold"
+                                    : "text-text-secondary dark:text-gray-300 font-SoraRegular"
                                 }`}
                               >
                                 {type}
@@ -322,11 +430,21 @@ export default function Focus() {
                 </View>
                 <TouchableOpacity
                   onPress={() => setIsFlowModalVisible(true)}
-                  className="ml-4"
+                  className="ml-4 bg-white dark:bg-gray-800 rounded-xl px-4 py-3 border border-gray-100 dark:border-gray-700"
+                  style={{
+                    shadowColor: "#000",
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.08,
+                    shadowRadius: 8,
+                    elevation: 4,
+                  }}
                 >
-                  <Text className="text-active-tab text-sm font-SoraSemiBold">
-                    Flows
-                  </Text>
+                  <View className="flex-row items-center gap-2">
+                    <View className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
+                    <Text className="text-blue-600 dark:text-blue-400 text-sm font-SoraSemiBold">
+                      Flows
+                    </Text>
+                  </View>
                 </TouchableOpacity>
               </View>
             )}
@@ -336,25 +454,40 @@ export default function Focus() {
           <View className="flex-1 justify-center items-center w-full">
             {/* Timer Display */}
             <View className="items-center mb-8">
-              <TouchableOpacity
-                onPress={() =>
-                  !isRunning && !currentFlow && setIsTimeModalVisible(true)
-                }
-                activeOpacity={currentFlow ? 1 : 0.8}
-                className="items-center"
+              <View
+                className="bg-white dark:bg-gray-800 rounded-2xl px-8 py-6 border border-gray-100 dark:border-gray-700"
+                style={{
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 12,
+                  elevation: 6,
+                }}
               >
-                <Text className="text-text-primary text-7xl font-SoraBold mb-2">
-                  {formatTime(duration)}
-                </Text>
-                {!currentFlow && (
-                  <View className="flex-row items-center justify-center gap-2">
-                    <Text className="text-text-primary/60 text-base font-SoraSemiBold">
-                      {durationMinutes} min
-                    </Text>
-                    <Edit width={16} height={16} color="#ffffff99" />
-                  </View>
-                )}
-              </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() =>
+                    !isRunning && !currentFlow && setIsTimeModalVisible(true)
+                  }
+                  activeOpacity={currentFlow ? 1 : 0.8}
+                  className="items-center"
+                >
+                  <Text className="text-text-primary text-7xl font-SoraBold mb-3">
+                    {formatTime(duration)}
+                  </Text>
+                  {!currentFlow && (
+                    <View className="flex-row items-center justify-center gap-3">
+                      <View className="bg-gray-100 dark:bg-gray-700 rounded-full px-4 py-2">
+                        <Text className="text-text-secondary text-sm font-SoraSemiBold">
+                          {durationMinutes} min
+                        </Text>
+                      </View>
+                      <View className="bg-blue-500/10 rounded-full p-2 border border-blue-500/20">
+                        <Edit width={16} height={16} color="#3B82F6" />
+                      </View>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              </View>
             </View>
 
             {/* Start/Pause Button */}
@@ -368,19 +501,128 @@ export default function Focus() {
 
         {/* Bottom Section */}
         <View className="w-full rounded-t-3xl px-6 pt-6 pb-8">
-          <View className="flex-row items-center justify-end mb-4">
-            <TouchableOpacity
-              onPress={() => setIsQuickTaskModalVisible(true)}
-              className="flex-row items-center gap-1"
+          {/* Flow Context Label */}
+          {currentFlow && currentTask && (
+            <Animated.View
+              className="w-full items-center mb-2"
+              style={{
+                opacity: flowContextAnim,
+                transform: [{ scale: flowContextAnim }],
+              }}
             >
-              <Text className="text-accent text-sm font-SoraSemiBold">
-                Add Task
-              </Text>
-              <ChevronRight width={16} height={16} color="#5CE1E1" />
-            </TouchableOpacity>
+              <View className="flex-row items-center gap-2 bg-blue-50 dark:bg-blue-900/20 rounded-full px-4 py-2 border border-blue-100 dark:border-blue-800/50">
+                <View className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
+                <Text className="text-blue-600 dark:text-blue-400 text-sm font-SoraSemiBold">
+                  Current Focus
+                </Text>
+              </View>
+            </Animated.View>
+          )}
+
+          <View className="w-full items-center mb-3">
+            <Animated.View
+              style={{
+                width: cardWidth,
+              }}
+            >
+              {currentTask ? (
+                <TouchableOpacity
+                  onPress={() => setIsQuickTaskModalVisible(true)}
+                  activeOpacity={0.9}
+                  className={`flex-row items-center justify-between rounded-full px-5 py-3 shadow-sm ${
+                    currentFlow
+                      ? "bg-white dark:bg-gray-800 border-2 border-blue-200 dark:border-blue-700"
+                      : "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600"
+                  }`}
+                  style={{
+                    minHeight: 48,
+                    shadowColor: currentFlow ? "#3B82F6" : "#000",
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: currentFlow ? 0.15 : 0.08,
+                    shadowRadius: currentFlow ? 12 : 8,
+                    elevation: currentFlow ? 6 : 4,
+                  }}
+                >
+                  <View className="flex-row items-center gap-2 flex-1">
+                    {!currentFlow && (
+                      <View className="flex-row items-center gap-1.5 bg-gray-100 dark:bg-gray-700 rounded-full px-2 py-0.5 mr-1">
+                        <View className="w-1 h-1 bg-gray-500 rounded-full" />
+                        <Text className="text-gray-600 dark:text-gray-400 text-xs font-SoraSemiBold">
+                          Task
+                        </Text>
+                      </View>
+                    )}
+                    <View
+                      className={`w-2.5 h-2.5 rounded-full ${
+                        currentTask.tag === "urgent"
+                          ? "bg-red-500"
+                          : currentTask.tag === "important"
+                            ? "bg-amber-500"
+                            : currentTask.tag === "quickwin"
+                              ? "bg-green-500"
+                              : currentTask.tag === "deepwork"
+                                ? "bg-blue-500"
+                                : "bg-gray-300"
+                      }`}
+                    />
+                    <Text
+                      className={`text-text-primary text-base font-SoraSemiBold ${currentTask.completed ? "line-through text-gray-400" : ""}`}
+                    >
+                      {currentTask.name}
+                    </Text>
+                  </View>
+                  <View className="flex-row items-center gap-2">
+                    {!currentTask.completed && (
+                      <TouchableOpacity
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          completeCurrentTask();
+                        }}
+                        className="bg-green-500 rounded-full p-2"
+                        accessibilityLabel="Mark as complete"
+                      >
+                        <Ionicons name="checkmark" size={18} color="#fff" />
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        clearCurrentTask();
+                      }}
+                      className="bg-gray-100 dark:bg-gray-700 rounded-full p-2 ml-1"
+                      accessibilityLabel="Clear task"
+                    >
+                      <Ionicons name="close" size={18} color="#888" />
+                    </TouchableOpacity>
+                  </View>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  onPress={() => setIsQuickTaskModalVisible(true)}
+                  className="bg-white dark:bg-gray-800 border border-blue-500 flex-row items-center justify-center rounded-full px-6 py-3 shadow-sm"
+                  style={{ minHeight: 48 }}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="add" size={20} color="#2563EB" />
+                  <Text className="text-blue-600 dark:text-blue-400 text-base font-SoraSemiBold ml-2">
+                    Add Task
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </Animated.View>
           </View>
 
-          <TodayProgress />
+          {/* Animated Today's Progress */}
+          {!currentFlow && (
+            <Animated.View
+              style={{
+                opacity: todayProgressAnim,
+                transform: [{ scale: todayProgressAnim }],
+              }}
+            >
+              <TodayProgress />
+            </Animated.View>
+          )}
         </View>
       </View>
 
@@ -418,15 +660,28 @@ export default function Focus() {
           onPress={() => setIsFlowModalVisible(false)}
         >
           <Pressable
-            className="w-full max-w-md bg-tab-bg rounded-xl overflow-hidden"
+            className="w-full max-w-md bg-white dark:bg-gray-800 rounded-xl overflow-hidden"
             onPress={(e) => e.stopPropagation()}
+            style={{
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.15,
+              shadowRadius: 16,
+              elevation: 8,
+            }}
           >
             <View className="p-6 max-h-[80vh]">
-              <Text className="text-text-primary text-xl font-SoraSemiBold mb-4">
-                Select a Flow
-              </Text>
-              <ScrollView className="max-h-96">
-                <View className="gap-4">
+              <View className="flex-row items-center gap-2 mb-4">
+                <View className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
+                <Text className="text-text-primary text-xl font-SoraSemiBold">
+                  Select a Flow
+                </Text>
+              </View>
+              <ScrollView
+                className="max-h-96"
+                showsVerticalScrollIndicator={false}
+              >
+                <View className="gap-3">
                   {Object.entries({
                     "Classic Focus": [
                       { type: "Classic", duration: 25 * 60 },
@@ -449,24 +704,36 @@ export default function Focus() {
                     <TouchableOpacity
                       key={flowName}
                       onPress={() => handleFlowSelect(flowName)}
-                      className="bg-secondary p-4 rounded-xl"
+                      className="bg-gray-50 dark:bg-gray-700 p-4 rounded-xl border border-gray-100 dark:border-gray-600"
+                      style={{
+                        shadowColor: "#000",
+                        shadowOffset: { width: 0, height: 2 },
+                        shadowOpacity: 0.05,
+                        shadowRadius: 4,
+                        elevation: 2,
+                      }}
                     >
-                      <Text className="text-text-primary text-lg font-SoraSemiBold mb-1">
-                        {flowName}
-                      </Text>
-                      <Text className="text-text-secondary text-sm">
+                      <View className="flex-row items-center gap-2 mb-2">
+                        <View className="w-1 h-1 bg-blue-500 rounded-full" />
+                        <Text className="text-text-primary text-lg font-SoraSemiBold">
+                          {flowName}
+                        </Text>
+                      </View>
+                      <Text className="text-text-secondary text-sm mb-2">
                         {flow.map((s) => s.type).join(" → ")}
                       </Text>
-                      <Text className="text-text-secondary text-xs mt-2">
-                        {Math.floor(
-                          flow.reduce(
-                            (total: number, session) =>
-                              total + session.duration,
-                            0
-                          ) / 60
-                        )}{" "}
-                        min total
-                      </Text>
+                      <View className="bg-blue-500/10 rounded-full px-3 py-1 self-start">
+                        <Text className="text-blue-600 dark:text-blue-400 text-xs font-SoraSemiBold">
+                          {Math.floor(
+                            flow.reduce(
+                              (total: number, session) =>
+                                total + session.duration,
+                              0
+                            ) / 60
+                          )}{" "}
+                          min total
+                        </Text>
+                      </View>
                     </TouchableOpacity>
                   ))}
                 </View>
