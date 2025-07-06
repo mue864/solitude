@@ -51,10 +51,10 @@ export const FLOWS = {
     { type: "Quick Task", duration: SESSION_TYPES["Quick Task"] },
   ],
   "Debug Flow": [
-    {type: "Session 1", duration: 1 * 60},
-    {type: "Session 2", duration: 1 * 60},
-    {type: "Session 3", duration: 1 * 60},
-  ]
+    { type: "Session 1", duration: 1 * 60 },
+    { type: "Session 2", duration: 1 * 60 },
+    { type: "Session 3", duration: 1 * 60 },
+  ],
 };
 
 type FlowName = keyof typeof FLOWS;
@@ -126,21 +126,21 @@ export const useSessionStore = create<SessionState>()(
 
       // Start a predefined flow
       startFlow: (flowName) => {
-        console.log('Starting flow:', flowName);
+        console.log("Starting flow:", flowName);
         const flow = FLOWS[flowName as keyof typeof FLOWS];
-        console.log('Flow data:', flow);
-        
+        console.log("Flow data:", flow);
+
         if (!flow || flow.length === 0) {
-          console.log('Invalid or empty flow');
+          console.log("Invalid or empty flow");
           return;
         }
 
         const firstSession = flow[0];
-        console.log('First session:', firstSession);
-        
+        console.log("First session:", firstSession);
+
         // Clear any existing intervals
         if (get().isRunning) {
-          console.log('Stopping current session');
+          console.log("Stopping current session");
           set({
             isRunning: false,
             isPaused: false,
@@ -156,8 +156,8 @@ export const useSessionStore = create<SessionState>()(
           isPaused: false,
           sessionId: Date.now().toString(),
         };
-        
-        console.log('Setting new state:', newState);
+
+        console.log("Setting new state:", newState);
         set(newState);
       },
 
@@ -306,7 +306,10 @@ export const useSessionStore = create<SessionState>()(
                 const twoDaysAgo = new Date();
                 twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
                 const twoDaysAgoStr = twoDaysAgo.toISOString().split("T")[0];
-                newStreak = state.lastSessionDate >= twoDaysAgoStr ? state.currentStreak : 1;
+                newStreak =
+                  state.lastSessionDate >= twoDaysAgoStr
+                    ? state.currentStreak
+                    : 1;
               }
             }
           }

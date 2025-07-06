@@ -31,10 +31,7 @@ export default function FlowsModal({
       onRequestClose={onClose}
     >
       <View className="flex-1 justify-center items-center bg-black/50">
-        <Pressable
-          className="absolute inset-0"
-          onPress={onClose}
-        />
+        <Pressable className="absolute inset-0" onPress={onClose} />
         <View className="w-full max-w-md" style={{ zIndex: 10 }}>
           <View className="bg-tab-bg rounded-2xl shadow-xl overflow-hidden m-4">
             <View className="p-6 max-h-[80vh]">

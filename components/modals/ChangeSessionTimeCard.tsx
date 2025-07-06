@@ -1,7 +1,11 @@
+import {
+  SESSION_TYPES,
+  SessionType,
+  useSessionStore,
+} from "@/store/sessionState";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import React, { useEffect, useState } from "react";
-import { SESSION_TYPES, SessionType, useSessionStore } from "@/store/sessionState";
 import {
   Modal,
   Platform,

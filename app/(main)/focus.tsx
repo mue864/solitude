@@ -22,8 +22,16 @@ import StartSessionBtn from "@/components/StartSessionBtn";
 import TodayProgress from "@/components/TodayProgress";
 
 // Store
-import { SESSION_TYPES, useSessionStore, type SessionType } from "@/store/sessionState";
-import { FlowIndicator, FlowDetailsModal, type FlowName } from "@/components/FlowIndicator";
+import {
+  FlowDetailsModal,
+  FlowIndicator,
+  type FlowName,
+} from "@/components/FlowIndicator";
+import {
+  SESSION_TYPES,
+  useSessionStore,
+  type SessionType,
+} from "@/store/sessionState";
 
 export default function Focus() {
   // Modal visibility states
@@ -96,12 +104,12 @@ export default function Focus() {
 
     if (currentSessionId !== lastSessionId.current) {
       lastSessionId.current = currentSessionId;
-      
+
       if (shouldShowQuote()) {
         lastFlowContext.current = {
           flow: currentFlow,
           step: currentFlowStep,
-          lastQuoteTime: now
+          lastQuoteTime: now,
         };
 
         // Small delay to ensure state is fully updated
@@ -122,7 +130,7 @@ export default function Focus() {
         lastFlowContext.current = {
           flow: currentFlow,
           step: currentFlowStep,
-          lastQuoteTime: lastFlowContext.current.lastQuoteTime
+          lastQuoteTime: lastFlowContext.current.lastQuoteTime,
         };
       }
     }
@@ -147,11 +155,11 @@ export default function Focus() {
 
   // Flow details modal state
   const [showFlowDetails, setShowFlowDetails] = useState(false);
-  
+
   // Debug logs
-  console.log('Current flow:', currentFlow);
-  console.log('Current flow step:', currentFlowStep);
-  console.log('Session type:', sessionType);
+  console.log("Current flow:", currentFlow);
+  console.log("Current flow step:", currentFlowStep);
+  console.log("Session type:", sessionType);
 
   // Handle timer countdown
   useEffect(() => {
@@ -182,22 +190,34 @@ export default function Focus() {
           return currentDuration - 1;
         });
       }, 1000);
-    } else if (isRunning && isPaused) {
-      // If we're in a running state but paused, clear the timer
+      
+      // Clear the timer when paused or stopped
+      return cleanup;
+    } else if (isPaused) {
+      // Clear any running timers when paused
       cleanup();
+      return;
     } else if (!isRunning && currentFlow && currentFlowStep > 0) {
       // If we're in a flow and not running, but should be, start the timer
       // This handles the case when we transition to a new session in the flow
       const timerId = setTimeout(() => {
         resumeSession();
       }, 0);
-      
+
       return () => clearTimeout(timerId);
     }
 
     // Clean up on unmount or when dependencies change
     return cleanup;
-  }, [isRunning, isPaused, setDuration, completeSession, currentFlow, currentFlowStep, resumeSession]);
+  }, [
+    isRunning,
+    isPaused,
+    setDuration,
+    completeSession,
+    currentFlow,
+    currentFlowStep,
+    resumeSession,
+  ]);
 
   // Update duration when session type changes - only when not running and not paused
   useEffect(() => {
@@ -421,7 +441,7 @@ export default function Focus() {
                       { type: "Session 1", duration: 60 },
                       { type: "Session 2", duration: 60 },
                       { type: "Session 3", duration: 60 },
-                    ]
+                    ],
                   }).map(([flowName, flow]) => (
                     <TouchableOpacity
                       key={flowName}
