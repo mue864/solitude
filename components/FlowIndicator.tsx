@@ -1,3 +1,4 @@
+import { useFlowStore } from "@/store/flowStore";
 import { type SessionType } from "@/store/sessionState";
 import React, { useEffect, useRef } from "react";
 import {
@@ -10,55 +11,35 @@ import {
   View,
 } from "react-native";
 
-// Define FLOWS constant and its type
-export type FlowName = keyof typeof FLOWS;
-
-export const FLOWS = {
-  "Classic Focus": [
-    { type: "Classic", duration: 25 * 60 },
-    { type: "Short Break", duration: 5 * 60 },
-  ],
-  "Solo Study": [
-    { type: "Deep Focus", duration: 50 * 60 },
-    { type: "Short Break", duration: 5 * 60 },
-  ],
-  "Creative Rhythm": [
-    { type: "Creative Time", duration: 30 * 60 },
-    { type: "Mindful Moment", duration: 10 * 60 },
-  ],
-  "Debug Flow": [
-    { type: "Session 1", duration: 60 },
-    { type: "Session 2", duration: 60 },
-    { type: "Session 3", duration: 60 },
-  ],
-} as const satisfies Record<string, { type: string; duration: number }[]>;
-
+// Update FlowIndicatorProps to use currentFlowId: string | null
 interface FlowIndicatorProps {
-  currentFlow: string | null;
+  currentFlowId: string | null;
   currentFlowStep: number;
   sessionType: SessionType;
   onPress: () => void;
 }
 
 export const FlowIndicator = ({
-  currentFlow,
+  currentFlowId,
   currentFlowStep,
   sessionType,
   onPress,
 }: FlowIndicatorProps) => {
-  // Initialize animation ref at the top level of the component
-  const progressAnim = useRef(new Animated.Value(0)).current;
-
-  // Calculate progress based on current state
-  const flow = currentFlow ? FLOWS[currentFlow as keyof typeof FLOWS] : null;
-  const totalSteps = flow?.length || 1;
+  const customFlows = useFlowStore((state) => state.customFlows);
+  const flow = currentFlowId
+    ? customFlows.find((f) => f.id === currentFlowId)
+    : null;
+  const totalSteps = flow?.steps.length || 1;
   const progress = flow
     ? Math.min(100, Math.max(0, (currentFlowStep / (totalSteps - 1)) * 100))
     : 0;
 
+  // Initialize animation ref at the top level of the component
+  const progressAnim = useRef(new Animated.Value(0)).current;
+
   // Animate progress bar when currentFlowStep changes
   useEffect(() => {
-    if (!currentFlow || !flow) return;
+    if (!currentFlowId || !flow) return;
 
     Animated.timing(progressAnim, {
       toValue: progress,
@@ -66,17 +47,17 @@ export const FlowIndicator = ({
       easing: Easing.out(Easing.ease),
       useNativeDriver: false, // width animation doesn't support native driver
     }).start();
-  }, [progress, progressAnim, currentFlowStep, currentFlow, flow]);
+  }, [progress, progressAnim, currentFlowStep, currentFlowId, flow]);
 
   // Return early if no current flow
-  if (!currentFlow || !flow) return null;
+  if (!currentFlowId || !flow) return null;
 
-    return (
+  return (
     <Pressable
       onPress={onPress}
       className="w-full mb-6 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden"
       style={{
-        shadowColor: '#000',
+        shadowColor: "#000",
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.08,
         shadowRadius: 8,
@@ -88,7 +69,7 @@ export const FlowIndicator = ({
           <View className="flex-row items-center gap-2">
             <View className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
             <Text className="text-text-primary text-base font-SoraSemiBold">
-              {currentFlow}
+              {flow.name}
             </Text>
           </View>
           <View className="bg-blue-500/10 rounded-full px-3 py-1 border border-blue-500/20">
@@ -97,16 +78,12 @@ export const FlowIndicator = ({
             </Text>
           </View>
         </View>
-        
+
         <Text className="text-text-secondary text-sm mb-3">
           {sessionType} •{" "}
-          {Math.floor(
-            FLOWS[currentFlow as keyof typeof FLOWS][currentFlowStep].duration /
-              60
-          )}{" "}
-          min
+          {Math.floor(flow.steps[currentFlowStep].duration / 60)} min
         </Text>
-        
+
         <View className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
           <Animated.View
             className="h-full rounded-full"
@@ -129,7 +106,7 @@ export const FlowIndicator = ({
                   }),
                 },
               ],
-              shadowColor: '#3B82F6',
+              shadowColor: "#3B82F6",
               shadowOffset: { width: 0, height: 1 },
               shadowOpacity: 0.2,
               shadowRadius: 2,
@@ -145,7 +122,7 @@ export const FlowIndicator = ({
 interface FlowDetailsModalProps {
   visible: boolean;
   onClose: () => void;
-  flowName: keyof typeof FLOWS | "";
+  flowName: string;
   currentStep: number;
 }
 
@@ -157,9 +134,8 @@ export const FlowDetailsModal = ({
 }: FlowDetailsModalProps) => {
   if (!flowName) return null;
 
-  const flow = FLOWS[flowName];
-  if (!flow) return null;
-
+  const customFlows = useFlowStore((state) => state.customFlows);
+  const flow = customFlows.find((f) => f.id === flowName);
   if (!flow) return null;
 
   return (
@@ -179,11 +155,11 @@ export const FlowDetailsModal = ({
         >
           <View className="p-6">
             <Text className="text-text-primary text-xl font-SoraSemiBold mb-4">
-              {flowName} Flow
+              {flow.name} Flow
             </Text>
             <ScrollView className="max-h-[60vh]">
               <View className="gap-3">
-                {flow.map((session, index) => (
+                {flow.steps.map((session, index) => (
                   <View
                     key={index}
                     className={`p-3 rounded-lg ${index === currentStep ? "bg-secondary/20" : "bg-secondary/5"}`}

@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { useFlowStore } from "./flowStore";
 
 // Session types and their durations in seconds
 export const SESSION_TYPES: Record<SessionType, number> = {
@@ -57,15 +58,13 @@ export const FLOWS = {
   ],
 };
 
-type FlowName = keyof typeof FLOWS;
-
 export interface SessionState {
   // Session state
   sessionType: SessionType;
   duration: number;
   isRunning: boolean;
   isPaused: boolean;
-  currentFlow: FlowName | null;
+  currentFlowId: string | null;
   currentFlowStep: number;
   sessionId: string; // Unique ID for each session
 
@@ -97,7 +96,7 @@ export interface SessionState {
   completeSession: () => void;
   missSession: () => void;
   resetProgress: () => void;
-  startFlow: (flowName: FlowName) => void;
+  startFlow: (flowId: string) => void;
   nextSession: () => void;
   checkAndResetStreak: () => void;
 
@@ -116,7 +115,7 @@ export const useSessionStore = create<SessionState>()(
       duration: SESSION_TYPES["Classic"],
       isRunning: false,
       isPaused: false,
-      currentFlow: null,
+      currentFlowId: null,
       currentFlowStep: 0,
       sessionId: Date.now().toString(),
       showFlowCompletionModal: false,
@@ -137,23 +136,25 @@ export const useSessionStore = create<SessionState>()(
           duration: newDuration,
           isRunning: false,
           isPaused: false,
-          currentFlow: null, // Clear current flow when manually setting session
+          currentFlowId: null, // Clear current flow when manually setting session
           currentFlowStep: 0,
         });
       },
 
       // Start a predefined flow
-      startFlow: (flowName) => {
-        console.log("Starting flow:", flowName);
-        const flow = FLOWS[flowName as keyof typeof FLOWS];
+      startFlow: (flowId) => {
+        console.log("Starting flow:", flowId);
+        const flow = useFlowStore
+          .getState()
+          .customFlows.find((f) => f.id === flowId);
         console.log("Flow data:", flow);
 
-        if (!flow || flow.length === 0) {
+        if (!flow || flow.steps.length === 0) {
           console.log("Invalid or empty flow");
           return;
         }
 
-        const firstSession = flow[0];
+        const firstSession = flow.steps[0];
         console.log("First session:", firstSession);
 
         // Clear any existing intervals
@@ -166,7 +167,7 @@ export const useSessionStore = create<SessionState>()(
         }
 
         const newState = {
-          currentFlow: flowName,
+          currentFlowId: flowId,
           currentFlowStep: 0,
           sessionType: firstSession.type as SessionType,
           duration: firstSession.duration,
@@ -181,7 +182,7 @@ export const useSessionStore = create<SessionState>()(
 
       // Move to the next session in the current flow
       nextSession: () => {
-        const { currentFlow, currentFlowStep, sessionType } = get();
+        const { currentFlowId, currentFlowStep, sessionType } = get();
 
         if (get().currentFlowStep > 0) {
           // If we're in a flow but not at the first step, reset to the first step
@@ -190,21 +191,26 @@ export const useSessionStore = create<SessionState>()(
             isRunning: false,
             isPaused: false,
             currentFlowStep: 0,
-            duration: currentFlow
-              ? FLOWS[currentFlow][0].duration
+            duration: currentFlowId
+              ? useFlowStore
+                  .getState()
+                  .customFlows.find((f) => f.id === currentFlowId)?.steps[0]
+                  .duration
               : SESSION_TYPES[sessionType],
           });
         }
 
-        if (!currentFlow) return; // No active flow
+        if (!currentFlowId) return; // No active flow
 
-        const flow = FLOWS[currentFlow];
+        const flow = useFlowStore
+          .getState()
+          .customFlows.find((f) => f.id === currentFlowId);
         const nextStep = currentFlowStep + 1;
 
-        if (nextStep >= flow.length) {
+        if (nextStep >= flow?.steps.length || !flow) {
           // End of flow
           set({
-            currentFlow: null,
+            currentFlowId: null,
             currentFlowStep: 0,
             isRunning: false,
             isPaused: false,
@@ -215,8 +221,8 @@ export const useSessionStore = create<SessionState>()(
         // Move to next step in flow
         set({
           currentFlowStep: nextStep,
-          sessionType: flow[nextStep].type as SessionType, // Ensure type safety
-          duration: flow[nextStep].duration,
+          sessionType: flow.steps[nextStep].type as SessionType, // Ensure type safety
+          duration: flow.steps[nextStep].duration,
           isRunning: false,
           isPaused: false,
         });
@@ -257,7 +263,7 @@ export const useSessionStore = create<SessionState>()(
           duration: SESSION_TYPES["Classic"],
           isRunning: false,
           isPaused: false,
-          currentFlow: null,
+          currentFlowId: null,
           currentFlowStep: 0,
           sessionId: Date.now().toString(),
         }),
@@ -274,7 +280,7 @@ export const useSessionStore = create<SessionState>()(
           let completedPomodoros = state.completedPomodoros;
           let newSessionType = state.sessionType;
           let newDuration = state.duration;
-          let newFlow = state.currentFlow;
+          let newFlowId = state.currentFlowId;
           let newFlowStep = state.currentFlowStep;
           let shouldStartNextSession = false;
 
@@ -315,22 +321,27 @@ export const useSessionStore = create<SessionState>()(
           }
 
           // Handle flow logic first
-          if (state.currentFlow && state.currentFlow in FLOWS) {
-            const flow = FLOWS[state.currentFlow];
+          if (
+            state.currentFlowId &&
+            state.currentFlowId in useFlowStore.getState().customFlows
+          ) {
+            const flow = useFlowStore
+              .getState()
+              .customFlows.find((f) => f.id === state.currentFlowId);
             const nextStep = state.currentFlowStep + 1;
 
-            if (nextStep < flow.length) {
+            if (nextStep < flow?.steps.length) {
               // Update the session data for the next step
               newFlowStep = nextStep;
-              newSessionType = flow[nextStep].type as SessionType;
-              newDuration = flow[nextStep].duration;
+              newSessionType = flow.steps[nextStep].type as SessionType;
+              newDuration = flow.steps[nextStep].duration;
 
               // Show flow completion modal instead of auto-starting
               return {
                 ...state,
                 sessionType: newSessionType,
                 duration: newDuration,
-                currentFlow: newFlow,
+                currentFlowId: state.currentFlowId,
                 currentFlowStep: newFlowStep,
                 isRunning: false, // Don't auto-start
                 isPaused: false,
@@ -341,10 +352,10 @@ export const useSessionStore = create<SessionState>()(
                 showFlowCompletionModal: true,
                 flowCompletionData: {
                   completedSessions: nextStep, // nextStep is already the number of completed sessions
-                  totalSessions: flow.length,
-                  nextSessionType: flow[nextStep].type,
-                  nextSessionDuration: flow[nextStep].duration,
-                  currentFlowName: state.currentFlow,
+                  totalSessions: flow.steps.length,
+                  nextSessionType: flow.steps[nextStep].type,
+                  nextSessionDuration: flow.steps[nextStep].duration,
+                  currentFlowName: state.currentFlowId,
                 },
                 ...(shouldUpdateStreak && {
                   currentStreak: newStreak,
@@ -355,7 +366,7 @@ export const useSessionStore = create<SessionState>()(
               // End of flow - show completion modal for the last session
               return {
                 ...state,
-                currentFlow: null,
+                currentFlowId: null,
                 currentFlowStep: 0,
                 isRunning: false,
                 isPaused: false,
@@ -365,11 +376,11 @@ export const useSessionStore = create<SessionState>()(
                 sessionId: Date.now().toString(),
                 showFlowCompletionModal: true,
                 flowCompletionData: {
-                  completedSessions: flow.length,
-                  totalSessions: flow.length,
+                  completedSessions: flow.steps.length,
+                  totalSessions: flow.steps.length,
                   nextSessionType: "Flow Complete",
                   nextSessionDuration: 0,
-                  currentFlowName: state.currentFlow,
+                  currentFlowName: state.currentFlowId,
                 },
                 ...(shouldUpdateStreak && {
                   currentStreak: newStreak,
@@ -383,7 +394,7 @@ export const useSessionStore = create<SessionState>()(
           const update: Partial<SessionState> = {
             sessionType: newSessionType,
             duration: newDuration,
-            currentFlow: newFlow,
+            currentFlowId: newFlowId,
             currentFlowStep: newFlowStep,
             isRunning: shouldStartNextSession,
             isPaused: false,
@@ -415,15 +426,17 @@ export const useSessionStore = create<SessionState>()(
             isRunning: false,
             isPaused: false,
             // Reset flow if a session is missed
-            currentFlow: null,
+            currentFlowId: null,
             currentFlowStep: 0,
           };
 
           // If we were in a flow, reset to the first session type
-          if (state.currentFlow) {
-            const flow = FLOWS[state.currentFlow];
-            update.sessionType = flow[0].type as SessionType; // Ensure type safety
-            update.duration = flow[0].duration;
+          if (state.currentFlowId) {
+            const flow = useFlowStore
+              .getState()
+              .customFlows.find((f) => f.id === state.currentFlowId);
+            update.sessionType = flow?.steps[0].type as SessionType; // Ensure type safety
+            update.duration = flow?.steps[0].duration;
           }
 
           return {
@@ -439,7 +452,7 @@ export const useSessionStore = create<SessionState>()(
           duration: SESSION_TYPES["Classic"],
           isRunning: false,
           isPaused: false,
-          currentFlow: null,
+          currentFlowId: null,
           currentFlowStep: 0,
           completedPomodoros: 0,
           completedSessions: 0,
@@ -499,7 +512,7 @@ export const useSessionStore = create<SessionState>()(
       endFlow: () =>
         set((state) => ({
           ...state,
-          currentFlow: null,
+          currentFlowId: null,
           currentFlowStep: 0,
           isRunning: false,
           isPaused: false,

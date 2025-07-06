@@ -1,5 +1,6 @@
 import { useTaskStore } from "@/store/taskStore";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -26,11 +27,9 @@ import StartSessionBtn from "@/components/StartSessionBtn";
 import TodayProgress from "@/components/TodayProgress";
 
 // Store
-import {
-  FlowDetailsModal,
-  FlowIndicator,
-  type FlowName,
-} from "@/components/FlowIndicator";
+import { FlowDetailsModal, FlowIndicator } from "@/components/FlowIndicator";
+import FlowsModal from "@/components/modals/FlowsModal";
+import { useFlowStore } from "@/store/flowStore";
 import {
   SESSION_TYPES,
   useSessionStore,
@@ -38,6 +37,7 @@ import {
 } from "@/store/sessionState";
 
 export default function Focus() {
+  const router = useRouter();
   // Modal visibility states
   const [isQuickTaskModalVisible, setIsQuickTaskModalVisible] = useState(false);
   const [isSessionTypeModalVisible, setIsSessionTypeModalVisible] =
@@ -61,7 +61,7 @@ export default function Focus() {
     sessionType,
     setSessionType,
     startFlow,
-    currentFlow,
+    currentFlowId,
     currentFlowStep,
     resumeSession,
     showFlowCompletionModal,
@@ -107,9 +107,9 @@ export default function Focus() {
       // 2. First session of the day (last quote was more than 12 hours ago)
       // 3. After a long break (coming back from >1 hour of inactivity)
       return (
-        currentFlow !== lastFlowContext.current.flow || // New flow
+        currentFlowId !== lastFlowContext.current.flow || // New flow
         now - lastFlowContext.current.lastQuoteTime > 12 * 60 * 60 * 1000 || // First of day
-        (lastFlowContext.current.flow && !currentFlow) // Just finished a flow
+        (lastFlowContext.current.flow && !currentFlowId) // Just finished a flow
       );
     };
 
@@ -118,7 +118,7 @@ export default function Focus() {
 
       if (shouldShowQuote()) {
         lastFlowContext.current = {
-          flow: currentFlow,
+          flow: currentFlowId,
           step: currentFlowStep,
           lastQuoteTime: now,
         };
@@ -139,13 +139,13 @@ export default function Focus() {
       } else {
         // Update context without showing quote
         lastFlowContext.current = {
-          flow: currentFlow,
+          flow: currentFlowId,
           step: currentFlowStep,
           lastQuoteTime: lastFlowContext.current.lastQuoteTime,
         };
       }
     }
-  }, [isRunning, currentSessionId, currentFlow, currentFlowStep]);
+  }, [isRunning, currentSessionId, currentFlowId, currentFlowStep]);
 
   // Handle quote modal close
   const handleQuoteModalClose = useCallback(() => {
@@ -158,17 +158,11 @@ export default function Focus() {
     setIsSessionTypeModalVisible(false);
   };
 
-  // Handle flow selection
-  const handleFlowSelect = (flowName: string) => {
-    startFlow(flowName as FlowName);
-    setIsFlowModalVisible(false);
-  };
-
   // Flow details modal state
   const [showFlowDetails, setShowFlowDetails] = useState(false);
 
   // Debug logs
-  console.log("Current flow:", currentFlow);
+  console.log("Current flow:", currentFlowId);
   console.log("Current flow step:", currentFlowStep);
   console.log("Session type:", sessionType);
 
@@ -210,7 +204,7 @@ export default function Focus() {
       return;
     } else if (
       !isRunning &&
-      currentFlow &&
+      currentFlowId &&
       currentFlowStep > 0 &&
       !showFlowCompletionModal
     ) {
@@ -231,7 +225,7 @@ export default function Focus() {
     isPaused,
     setDuration,
     completeSession,
-    currentFlow,
+    currentFlowId,
     currentFlowStep,
     resumeSession,
     showFlowCompletionModal,
@@ -239,11 +233,11 @@ export default function Focus() {
 
   // Update duration when session type changes - only when not running and not paused
   useEffect(() => {
-    if (!isRunning && !isPaused && !currentFlow) {
+    if (!isRunning && !isPaused && !currentFlowId) {
       // Only update duration if not in a flow (flows manage their own durations)
       setDuration(SESSION_TYPES[sessionType] || 25 * 60);
     }
-  }, [sessionType, isRunning, isPaused, setDuration, currentFlow]);
+  }, [sessionType, isRunning, isPaused, setDuration, currentFlowId]);
 
   // Format time as MM:SS
   const formatTime = (seconds: number) => {
@@ -272,7 +266,7 @@ export default function Focus() {
 
   // Animate TodayProgress and Flow context when Flow state changes
   useEffect(() => {
-    if (currentFlow) {
+    if (currentFlowId) {
       // Fade out TodayProgress and fade in Flow context when Flow starts
       Animated.parallel([
         Animated.timing(todayProgressAnim, {
@@ -305,7 +299,33 @@ export default function Focus() {
         }),
       ]).start();
     }
-  }, [currentFlow, todayProgressAnim, flowContextAnim]);
+  }, [currentFlowId, todayProgressAnim, flowContextAnim]);
+
+  const customFlows = useFlowStore((state) => state.customFlows);
+
+  // Restore handleFlowSelect function
+  const handleFlowSelect = (flowId: string) => {
+    startFlow(flowId);
+    setIsFlowModalVisible(false);
+  };
+
+  // Add handleCreateFlow function
+  const handleCreateFlow = () => {
+    setIsFlowModalVisible(false);
+    // Add a small delay to ensure modal closes before navigation
+    setTimeout(() => {
+      router.push("/create-flow");
+    }, 100);
+  };
+
+  // Add handleEditFlow function
+  const handleEditFlow = (flowId: string) => {
+    setIsFlowModalVisible(false);
+    // Add a small delay to ensure modal closes before navigation
+    setTimeout(() => {
+      router.push(`/create-flow?id=${flowId}`);
+    }, 100);
+  };
 
   return (
     <View className="flex-1 bg-primary pb-20">
@@ -337,10 +357,10 @@ export default function Focus() {
         <View className="flex-1 items-center px-4">
           {/* Session Type and Flow Selector */}
           <View className="w-full max-w-md mt-4 mb-4">
-            {currentFlow ? (
+            {currentFlowId ? (
               <View className="w-full px-4">
                 <FlowIndicator
-                  currentFlow={currentFlow}
+                  currentFlowId={currentFlowId}
                   currentFlowStep={currentFlowStep}
                   sessionType={sessionType}
                   onPress={() => setShowFlowDetails(true)}
@@ -466,15 +486,15 @@ export default function Focus() {
               >
                 <TouchableOpacity
                   onPress={() =>
-                    !isRunning && !currentFlow && setIsTimeModalVisible(true)
+                    !isRunning && !currentFlowId && setIsTimeModalVisible(true)
                   }
-                  activeOpacity={currentFlow ? 1 : 0.8}
+                  activeOpacity={currentFlowId ? 1 : 0.8}
                   className="items-center"
                 >
                   <Text className="text-text-primary text-7xl font-SoraBold mb-3">
                     {formatTime(duration)}
                   </Text>
-                  {!currentFlow && (
+                  {!currentFlowId && (
                     <View className="flex-row items-center justify-center gap-3">
                       <View className="bg-gray-100 dark:bg-gray-700 rounded-full px-4 py-2">
                         <Text className="text-text-secondary text-sm font-SoraSemiBold">
@@ -502,7 +522,7 @@ export default function Focus() {
         {/* Bottom Section */}
         <View className="w-full rounded-t-3xl px-6 pt-6 pb-8">
           {/* Flow Context Label */}
-          {currentFlow && currentTask && (
+          {currentFlowId && currentTask && (
             <Animated.View
               className="w-full items-center mb-2"
               style={{
@@ -530,21 +550,21 @@ export default function Focus() {
                   onPress={() => setIsQuickTaskModalVisible(true)}
                   activeOpacity={0.9}
                   className={`flex-row items-center justify-between rounded-full px-5 py-3 shadow-sm ${
-                    currentFlow
+                    currentFlowId
                       ? "bg-white dark:bg-gray-800 border-2 border-blue-200 dark:border-blue-700"
                       : "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600"
                   }`}
                   style={{
                     minHeight: 48,
-                    shadowColor: currentFlow ? "#3B82F6" : "#000",
+                    shadowColor: currentFlowId ? "#3B82F6" : "#000",
                     shadowOffset: { width: 0, height: 2 },
-                    shadowOpacity: currentFlow ? 0.15 : 0.08,
-                    shadowRadius: currentFlow ? 12 : 8,
-                    elevation: currentFlow ? 6 : 4,
+                    shadowOpacity: currentFlowId ? 0.15 : 0.08,
+                    shadowRadius: currentFlowId ? 12 : 8,
+                    elevation: currentFlowId ? 6 : 4,
                   }}
                 >
                   <View className="flex-row items-center gap-2 flex-1">
-                    {!currentFlow && (
+                    {!currentFlowId && (
                       <View className="flex-row items-center gap-1.5 bg-gray-100 dark:bg-gray-700 rounded-full px-2 py-0.5 mr-1">
                         <View className="w-1 h-1 bg-gray-500 rounded-full" />
                         <Text className="text-gray-600 dark:text-gray-400 text-xs font-SoraSemiBold">
@@ -613,7 +633,7 @@ export default function Focus() {
           </View>
 
           {/* Animated Today's Progress */}
-          {!currentFlow && (
+          {!currentFlowId && (
             <Animated.View
               style={{
                 opacity: todayProgressAnim,
@@ -638,110 +658,14 @@ export default function Focus() {
         onClose={() => setIsQuickTaskModalVisible(false)}
       />
 
-      {currentFlow && (
+      {currentFlowId && (
         <FlowDetailsModal
           visible={showFlowDetails}
           onClose={() => setShowFlowDetails(false)}
-          flowName={currentFlow as FlowName}
+          flowName={currentFlowId}
           currentStep={currentFlowStep}
         />
       )}
-
-      {/* Flow Selection Modal */}
-      <Modal
-        visible={isFlowModalVisible}
-        transparent={true}
-        animationType="fade"
-        statusBarTranslucent={true}
-        onRequestClose={() => setIsFlowModalVisible(false)}
-      >
-        <Pressable
-          className="absolute inset-0 bg-black/50 justify-center items-center p-4"
-          onPress={() => setIsFlowModalVisible(false)}
-        >
-          <Pressable
-            className="w-full max-w-md bg-white dark:bg-gray-800 rounded-xl overflow-hidden"
-            onPress={(e) => e.stopPropagation()}
-            style={{
-              shadowColor: "#000",
-              shadowOffset: { width: 0, height: 8 },
-              shadowOpacity: 0.15,
-              shadowRadius: 16,
-              elevation: 8,
-            }}
-          >
-            <View className="p-6 max-h-[80vh]">
-              <View className="flex-row items-center gap-2 mb-4">
-                <View className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
-                <Text className="text-text-primary text-xl font-SoraSemiBold">
-                  Select a Flow
-                </Text>
-              </View>
-              <ScrollView
-                className="max-h-96"
-                showsVerticalScrollIndicator={false}
-              >
-                <View className="gap-3">
-                  {Object.entries({
-                    "Classic Focus": [
-                      { type: "Classic", duration: 25 * 60 },
-                      { type: "Short Break", duration: 5 * 60 },
-                    ],
-                    "Solo Study": [
-                      { type: "Deep Focus", duration: 50 * 60 },
-                      { type: "Short Break", duration: 5 * 60 },
-                    ],
-                    "Creative Rhythm": [
-                      { type: "Creative Time", duration: 30 * 60 },
-                      { type: "Mindful Moment", duration: 10 * 60 },
-                    ],
-                    "Debug Flow": [
-                      { type: "Session 1", duration: 60 },
-                      { type: "Session 2", duration: 60 },
-                      { type: "Session 3", duration: 60 },
-                    ],
-                  }).map(([flowName, flow]) => (
-                    <TouchableOpacity
-                      key={flowName}
-                      onPress={() => handleFlowSelect(flowName)}
-                      className="bg-gray-50 dark:bg-gray-700 p-4 rounded-xl border border-gray-100 dark:border-gray-600"
-                      style={{
-                        shadowColor: "#000",
-                        shadowOffset: { width: 0, height: 2 },
-                        shadowOpacity: 0.05,
-                        shadowRadius: 4,
-                        elevation: 2,
-                      }}
-                    >
-                      <View className="flex-row items-center gap-2 mb-2">
-                        <View className="w-1 h-1 bg-blue-500 rounded-full" />
-                        <Text className="text-text-primary text-lg font-SoraSemiBold">
-                          {flowName}
-                        </Text>
-                      </View>
-                      <Text className="text-text-secondary text-sm mb-2">
-                        {flow.map((s) => s.type).join(" → ")}
-                      </Text>
-                      <View className="bg-blue-500/10 rounded-full px-3 py-1 self-start">
-                        <Text className="text-blue-600 dark:text-blue-400 text-xs font-SoraSemiBold">
-                          {Math.floor(
-                            flow.reduce(
-                              (total: number, session) =>
-                                total + session.duration,
-                              0
-                            ) / 60
-                          )}{" "}
-                          min total
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
 
       {/* Quote Modal */}
       {showQuoteModal && <QuoteCard onClose={handleQuoteModalClose} />}
@@ -754,6 +678,15 @@ export default function Focus() {
           data={flowCompletionData}
         />
       )}
+
+      {/* Flow Selection Modal */}
+      <FlowsModal
+        isVisible={isFlowModalVisible}
+        onClose={() => setIsFlowModalVisible(false)}
+        onSelectFlow={handleFlowSelect}
+        onCreateFlow={handleCreateFlow}
+        onEditFlow={handleEditFlow}
+      />
     </View>
   );
 }

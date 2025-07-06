@@ -1,16 +1,16 @@
+import CustomTabBar from "@/components/CustomTabBar";
 import { Tabs } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { View, StyleSheet } from "react-native";
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { 
-  useSharedValue,
-  withTiming,
-  withSpring,
-  runOnJS,
+import { StyleSheet, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+import {
   Easing,
-  useAnimatedStyle
-} from 'react-native-reanimated';
-import CustomTabBar from "@/components/CustomTabBar";
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 
 const SPRING_CONFIG = {
   damping: 20,
@@ -28,9 +28,11 @@ function TabNavigator() {
 
   // Animation style for tab transitions
   useAnimatedStyle(() => ({
-    transform: [{ 
-      translateX: withSpring(translateX.value, SPRING_CONFIG) 
-    }],
+    transform: [
+      {
+        translateX: withSpring(translateX.value, SPRING_CONFIG),
+      },
+    ],
   }));
 
   return (
@@ -38,13 +40,13 @@ function TabNavigator() {
       <Tabs
         screenListeners={{
           state: (e) => {
-            'worklet';
+            "worklet";
             const index = e.data?.state?.index || 0;
             const direction = index > prevIndex.value ? 1 : -1;
             translateX.value = direction * 30;
-            translateX.value = withTiming(0, { 
+            translateX.value = withTiming(0, {
               duration: 250,
-              easing: Easing.inOut(Easing.quad)
+              easing: Easing.inOut(Easing.quad),
             });
             prevIndex.value = index;
             runOnJS(handleIndexChange)(index);
@@ -53,32 +55,15 @@ function TabNavigator() {
         screenOptions={{
           headerShown: false,
           tabBarStyle: styles.tabBar,
-          tabBarBackground: () => (
-            <View style={styles.tabBarBackground} />
-          ),
+          tabBarBackground: () => <View style={styles.tabBarBackground} />,
         }}
         tabBar={(props) => <CustomTabBar {...props} />}
       >
-        <Tabs.Screen 
-          name="focus" 
-          options={{ tabBarLabel: "Focus" }}
-        />
-        <Tabs.Screen 
-          name="plan" 
-          options={{ tabBarLabel: "Plan" }}
-        />
-        <Tabs.Screen 
-          name="reflect" 
-          options={{ tabBarLabel: "Journal" }}
-        />
-        <Tabs.Screen 
-          name="insights" 
-          options={{ tabBarLabel: "Insights" }}
-        />
-        <Tabs.Screen 
-          name="settings" 
-          options={{ tabBarLabel: "Settings" }}
-        />
+        <Tabs.Screen name="focus" options={{ tabBarLabel: "Focus" }} />
+        <Tabs.Screen name="plan" options={{ tabBarLabel: "Plan" }} />
+        <Tabs.Screen name="reflect" options={{ tabBarLabel: "Journal" }} />
+        <Tabs.Screen name="insights" options={{ tabBarLabel: "Insights" }} />
+        <Tabs.Screen name="settings" options={{ tabBarLabel: "Settings" }} />
       </Tabs>
     </GestureHandlerRootView>
   );
@@ -99,14 +84,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#F4F9FF",
   },
   tabBar: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
     elevation: 0,
     shadowOpacity: 0,
     borderTopWidth: 0,
-    backgroundColor: 'transparent',
+    backgroundColor: "transparent",
   },
   tabBarBackground: {
     ...StyleSheet.absoluteFillObject,
