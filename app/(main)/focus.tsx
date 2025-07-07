@@ -21,13 +21,14 @@ import ChangeSessionTimeCard from "@/components/modals/ChangeSessionTimeCard";
 import FlowCompletionModal from "@/components/modals/FlowCompletionModal";
 import QuickTaskModal from "@/components/modals/QuickTaskModal";
 import QuoteCard from "@/components/modals/QuoteCard";
+import SessionIntelligenceModal from "@/components/modals/SessionIntelligenceModal";
 import StartSessionBtn from "@/components/StartSessionBtn";
 import TodayProgress from "@/components/TodayProgress";
 
 // Store
 import { FlowDetailsModal, FlowIndicator } from "@/components/FlowIndicator";
 import FlowsModal from "@/components/modals/FlowsModal";
-import SessionIntelligenceModal from "@/components/modals/SessionIntelligenceModal";
+import SessionIndicator from "@/components/SessionIndicator";
 import { useFlowStore } from "@/store/flowStore";
 import {
   SESSION_TYPES,
@@ -396,6 +397,18 @@ export default function Focus() {
                   onPress={() => setShowFlowDetails(true)}
                 />
               </View>
+            ) : isRunning || isPaused ? (
+              <View className="w-full px-4">
+                <View className="w-full max-w-md">
+                  <SessionIndicator
+                    sessionType={sessionType}
+                    duration={duration}
+                    isRunning={isRunning}
+                    isPaused={isPaused}
+                    onPress={() => setIsSessionTypeModalVisible(true)}
+                  />
+                </View>
+              </View>
             ) : (
               <View className="flex-row items-center justify-between w-full">
                 <View className="relative z-10 flex-1">
@@ -457,15 +470,20 @@ export default function Focus() {
               >
                 <TouchableOpacity
                   onPress={() =>
-                    !isRunning && !currentFlowId && setIsTimeModalVisible(true)
+                    !isRunning &&
+                    !isPaused &&
+                    !currentFlowId &&
+                    setIsTimeModalVisible(true)
                   }
-                  activeOpacity={currentFlowId ? 1 : 0.8}
+                  activeOpacity={
+                    currentFlowId || isRunning || isPaused ? 1 : 0.8
+                  }
                   className="items-center"
                 >
                   <Text className="text-text-primary text-7xl font-SoraBold mb-3">
                     {formatTime(duration)}
                   </Text>
-                  {!currentFlowId && (
+                  {!currentFlowId && !isRunning && !isPaused && (
                     <View className="flex-row items-center justify-center gap-3">
                       <View className="bg-gray-100 dark:bg-gray-700 rounded-full px-4 py-2">
                         <Text className="text-text-secondary text-sm font-SoraSemiBold">
@@ -602,21 +620,37 @@ export default function Focus() {
               ) : (
                 <TouchableOpacity
                   onPress={() => setIsQuickTaskModalVisible(true)}
-                  className="bg-white dark:bg-gray-800 border border-blue-500 flex-row items-center justify-center rounded-full px-6 py-3 shadow-sm"
+                  className={`flex-row items-center justify-center rounded-full px-6 py-3 shadow-sm ${
+                    isRunning && !isPaused
+                      ? "bg-blue-600 border-2 border-blue-700"
+                      : "bg-white dark:bg-gray-800 border border-blue-500"
+                  }`}
                   style={{ minHeight: 48 }}
                   activeOpacity={0.85}
+                  disabled={isRunning && !isPaused}
                 >
-                  <Ionicons name="add" size={20} color="#2563EB" />
-                  <Text className="text-blue-600 dark:text-blue-400 text-base font-SoraSemiBold ml-2">
-                    Add Task
-                  </Text>
+                  {isRunning && !isPaused ? (
+                    <>
+                      <Ionicons name="lock-closed" size={20} color="#fff" />
+                      <Text className="text-white text-base font-SoraSemiBold ml-2">
+                        Focus
+                      </Text>
+                    </>
+                  ) : (
+                    <>
+                      <Ionicons name="add" size={20} color="#2563EB" />
+                      <Text className="text-blue-600 dark:text-blue-400 text-base font-SoraSemiBold ml-2">
+                        Add Task
+                      </Text>
+                    </>
+                  )}
                 </TouchableOpacity>
               )}
             </Animated.View>
           </View>
 
           {/* Animated Today's Progress */}
-          {!currentFlowId && (
+          {!currentFlowId && !isRunning && !isPaused && (
             <Animated.View
               style={{
                 opacity: todayProgressAnim,
