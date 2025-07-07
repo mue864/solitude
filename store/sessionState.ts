@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { useFlowStore } from "./flowStore";
+import { useSessionIntelligence } from "./sessionIntelligence";
 
 // Session types and their durations in seconds
 export const SESSION_TYPES: Record<SessionType, number> = {
@@ -271,6 +272,21 @@ export const useSessionStore = create<SessionState>()(
       // Mark the current session as completed
       completeSession: () =>
         set((state) => {
+          // Record session in session intelligence
+          try {
+            const sessionIntelligence = useSessionIntelligence.getState();
+            sessionIntelligence.recordSession({
+              sessionType: state.sessionType,
+              duration: state.duration,
+              completed: true,
+              focusQuality: 7, // Default value, can be enhanced later
+              energyLevel: 7, // Default value, can be enhanced later
+              interruptions: 0, // Default value, can be enhanced later
+            });
+          } catch (error) {
+            console.log("Error recording session in intelligence:", error);
+          }
+
           console.log("completeSession called with state:", {
             currentFlowId: state.currentFlowId,
             currentFlowStep: state.currentFlowStep,
@@ -427,6 +443,24 @@ export const useSessionStore = create<SessionState>()(
       // Mark the current session as missed
       missSession: () =>
         set((state) => {
+          // Record failed session in session intelligence
+          try {
+            const sessionIntelligence = useSessionIntelligence.getState();
+            sessionIntelligence.recordSession({
+              sessionType: state.sessionType,
+              duration: state.duration,
+              completed: false,
+              focusQuality: 3, // Default value for failed sessions
+              energyLevel: 4, // Default value for failed sessions
+              interruptions: 2, // Default value for failed sessions
+            });
+          } catch (error) {
+            console.log(
+              "Error recording failed session in intelligence:",
+              error
+            );
+          }
+
           // Only increment if we haven't reached the total sessions
           if (state.missedSessions >= state.totalSessions) {
             return state; // No change if we've already missed all sessions

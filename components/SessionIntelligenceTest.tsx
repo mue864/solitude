@@ -1,7 +1,6 @@
 import React from "react";
 import { ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { useSessionIntelligence } from "../store/sessionIntelligence";
-import { useSessionStore } from "../store/sessionState";
 
 export const SessionIntelligenceTest: React.FC = () => {
   const {
@@ -11,14 +10,14 @@ export const SessionIntelligenceTest: React.FC = () => {
     getRecommendations,
     getProductivityInsights,
     getWeeklyAnalytics,
+    recordSession,
+    clearAllData,
+    getSessionHistory,
   } = useSessionIntelligence();
-
-  const { recordSession } = useSessionIntelligence();
-  const { sessionType } = useSessionStore();
 
   const testRecordSession = (completed: boolean) => {
     recordSession({
-      sessionType: sessionType,
+      sessionType: "Classic",
       duration: 25 * 60, // 25 minutes
       completed,
       focusQuality: completed
@@ -32,6 +31,7 @@ export const SessionIntelligenceTest: React.FC = () => {
   const recommendations = getRecommendations();
   const productivityInsights = getProductivityInsights();
   const weeklyAnalytics = getWeeklyAnalytics();
+  const sessionHistory = getSessionHistory(5);
 
   return (
     <ScrollView className="flex-1 bg-primary dark:bg-primary-dark p-4">
@@ -57,6 +57,12 @@ export const SessionIntelligenceTest: React.FC = () => {
           >
             <Text className="text-white font-semibold">Record Failure</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            className="bg-blue-500 px-4 py-2 rounded-lg"
+            onPress={clearAllData}
+          >
+            <Text className="text-white font-semibold">Clear Data</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -65,7 +71,7 @@ export const SessionIntelligenceTest: React.FC = () => {
         <Text className="text-lg font-semibold text-text-primary dark:text-text-primary-dark mb-2">
           Session Records ({sessionRecords.length})
         </Text>
-        {sessionRecords.slice(-5).map((record, index) => (
+        {sessionHistory.map((record) => (
           <View
             key={record.id}
             className="bg-card-bg dark:bg-card-bg-dark p-3 rounded-lg mb-2"
@@ -198,8 +204,8 @@ export const SessionIntelligenceTest: React.FC = () => {
               {pattern.successRate.toFixed(1)}%
             </Text>
             <Text className="text-text-secondary dark:text-text-secondary-dark">
-              Avg Duration: {Math.round(pattern.averageDuration / 60)}m | Avg
-              Quality: {pattern.averageFocusQuality.toFixed(1)}/10
+              Avg Focus: {pattern.averageFocusQuality.toFixed(1)}/10 | Avg
+              Energy: {pattern.averageEnergyLevel.toFixed(1)}/10
             </Text>
           </View>
         ))}

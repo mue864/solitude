@@ -5,9 +5,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
   Easing,
-  Modal,
   Pressable,
-  ScrollView,
   Text,
   TouchableOpacity,
   View,
@@ -29,6 +27,7 @@ import TodayProgress from "@/components/TodayProgress";
 // Store
 import { FlowDetailsModal, FlowIndicator } from "@/components/FlowIndicator";
 import FlowsModal from "@/components/modals/FlowsModal";
+import SessionIntelligenceModal from "@/components/modals/SessionIntelligenceModal";
 import { useFlowStore } from "@/store/flowStore";
 import {
   SESSION_TYPES,
@@ -414,70 +413,11 @@ export default function Focus() {
                     <View className="flex-row items-center  gap-2">
                       <View className="w-1.5 h-1.5 bg-purple-500 rounded-full" />
                       <Text className="text-text-primary text-base font-SoraSemiBold">
-                        {sessionType}
+                        Session Intelligence
                       </Text>
                     </View>
                     <ChevronDown width={16} height={16} color="#2C3E50" />
                   </Pressable>
-
-                  <Modal
-                    visible={isSessionTypeModalVisible}
-                    transparent={true}
-                    animationType="fade"
-                    statusBarTranslucent={true}
-                    onRequestClose={() => setIsSessionTypeModalVisible(false)}
-                  >
-                    <Pressable
-                      className="absolute inset-0 bg-black/50 justify-center items-center p-4"
-                      onPress={() => setIsSessionTypeModalVisible(false)}
-                    >
-                      <View
-                        className="w-full max-w-xs bg-white dark:bg-gray-800 rounded-xl overflow-hidden"
-                        style={{
-                          shadowColor: "#000",
-                          shadowOffset: { width: 0, height: 8 },
-                          shadowOpacity: 0.15,
-                          shadowRadius: 16,
-                          elevation: 8,
-                        }}
-                      >
-                        <View className="p-4 border-b border-gray-100 dark:border-gray-700">
-                          <Text className="text-text-primary text-lg font-SoraSemiBold text-center">
-                            Session Type
-                          </Text>
-                        </View>
-                        <ScrollView
-                          className="max-h-[60vh]"
-                          showsVerticalScrollIndicator={false}
-                        >
-                          {Object.keys(SESSION_TYPES).map((type) => (
-                            <Pressable
-                              key={type}
-                              onPress={() => {
-                                handleSessionSelect(type as SessionType);
-                                setIsSessionTypeModalVisible(false);
-                              }}
-                              className={`px-6 py-4 active:bg-gray-50 dark:active:bg-gray-700 ${
-                                sessionType === type
-                                  ? "bg-purple-50 dark:bg-purple-900/20 border-l-4 border-purple-500"
-                                  : "bg-white dark:bg-gray-800"
-                              }`}
-                            >
-                              <Text
-                                className={`text-base ${
-                                  sessionType === type
-                                    ? "text-purple-600 dark:text-purple-400 font-SoraSemiBold"
-                                    : "text-text-secondary dark:text-gray-300 font-SoraRegular"
-                                }`}
-                              >
-                                {type}
-                              </Text>
-                            </Pressable>
-                          ))}
-                        </ScrollView>
-                      </View>
-                    </Pressable>
-                  </Modal>
                 </View>
                 <TouchableOpacity
                   onPress={() => setIsFlowModalVisible(true)}
@@ -699,6 +639,12 @@ export default function Focus() {
       <QuickTaskModal
         isVisible={isQuickTaskModalVisible}
         onClose={() => setIsQuickTaskModalVisible(false)}
+      />
+
+      <SessionIntelligenceModal
+        isVisible={isSessionTypeModalVisible}
+        onClose={() => setIsSessionTypeModalVisible(false)}
+        onSelectSession={handleSessionSelect}
       />
 
       {currentFlowId && (
