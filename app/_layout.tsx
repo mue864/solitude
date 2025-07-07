@@ -1,12 +1,14 @@
+import UndoToast from "@/components/undoToast";
+import { useSessionStore } from "@/store/sessionState";
 import { TransitionPresets } from "@react-navigation/stack";
 import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect } from "react";
-import { View, StyleSheet } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useSessionStore } from "@/store/sessionState";
+import Toast, { BaseToast, ErrorToast } from "react-native-toast-message";
 
 // load splashscreen
 SplashScreen.preventAutoHideAsync();
@@ -35,8 +37,10 @@ export default function RootLayout() {
   }, [fontsLoaded, onLayoutRootView]);
 
   // Check streak when the app loads
-  const checkAndResetStreak = useSessionStore(state => state.checkAndResetStreak);
-  
+  const checkAndResetStreak = useSessionStore(
+    (state) => state.checkAndResetStreak
+  );
+
   useEffect(() => {
     checkAndResetStreak();
   }, [checkAndResetStreak]);
@@ -71,21 +75,34 @@ export default function RootLayout() {
             }}
           />
         </Stack>
+        <Toast
+          config={{
+            undoToast: ({ text1, props }) => (
+              <UndoToast
+                text1={text1 ?? ""}
+                onPress={props?.onPress ?? (() => {})}
+              />
+            ),
+            // You can keep the default toasts if you want:
+            success: (props) => <BaseToast {...props} />,
+            error: (props) => <ErrorToast {...props} />,
+          }}
+        />
       </SafeAreaView>
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'transparent',
+    backgroundColor: "transparent",
   },
   background: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#F4F9FF',
+    backgroundColor: "#F4F9FF",
   },
   screenContent: {
-    backgroundColor: 'transparent',
+    backgroundColor: "transparent",
   },
 });
