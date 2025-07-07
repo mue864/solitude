@@ -1,6 +1,7 @@
 import TaskGroup from "@/components/TaskGroup";
 import AddTaskModal from "@/components/modals/AddTaskModal";
 import EditTaskModal from "@/components/modals/EditTaskModal";
+import TaskSwitchWarningModal from "@/components/modals/TaskSwitchWarningModal";
 import { Task, TaskTag, useTaskStore } from "@/store/taskStore";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -26,12 +27,16 @@ export default function Plan() {
     completeCurrentTask,
     getCompletedTasks,
     getActiveTasks,
+    currentTaskId,
+    getCurrentTask,
   } = useTaskStore();
 
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editTask, setEditTask] = useState<Task | null>(null);
   const [deletedTask, setDeletedTask] = useState<Task | null>(null);
+  const [warningModalVisible, setWarningModalVisible] = useState(false);
+  const [pendingTaskSwitch, setPendingTaskSwitch] = useState<Task | null>(null);
   const undoTimeout = useRef<NodeJS.Timeout | null>(null);
 
   // Group active tasks by tag
@@ -71,6 +76,19 @@ export default function Plan() {
   };
 
   const handleEditTask = (task: Task) => {
+    // Don't allow editing the currently active task
+    if (task.id === currentTaskId) {
+      Toast.show({
+        type: "warningToast",
+        text1: "Cannot Edit Active Task",
+        text2: "Please complete or switch tasks first",
+        position: "top",
+        topOffset: 60,
+        props: { onPress: () => Toast.hide() },
+      });
+      return;
+    }
+
     setEditTask(task);
     setEditModalVisible(true);
   };
@@ -84,6 +102,21 @@ export default function Plan() {
   };
 
   const handleDeleteTask = (task: Task) => {
+    // Don't allow deleting the currently active task
+    if (task.id === currentTaskId) {
+      Toast.show({
+        type: "warningToast",
+        position: "top",
+        topOffset: 60,
+        props: {
+          text1: "Cannot Delete Active Task",
+          text2: "Please complete or switch tasks first",
+          onPress: () => Toast.hide(),
+        },
+      });
+      return;
+    }
+
     setDeletedTask(task);
     deleteTask(task.id);
     Toast.show({
@@ -117,8 +150,31 @@ export default function Plan() {
   };
 
   const handlePlayTask = (task: Task) => {
-    setCurrentTask(task.id);
-    router.push("/focus");
+    const currentTask = getCurrentTask();
+
+    // If there's already an active task and it's different from the one being clicked
+    if (currentTask && currentTask.id !== task.id) {
+      setPendingTaskSwitch(task);
+      setWarningModalVisible(true);
+    } else {
+      // No active task or same task, proceed normally
+      setCurrentTask(task.id);
+      router.push("/focus");
+    }
+  };
+
+  const handleConfirmTaskSwitch = () => {
+    if (pendingTaskSwitch) {
+      setCurrentTask(pendingTaskSwitch.id);
+      setWarningModalVisible(false);
+      setPendingTaskSwitch(null);
+      router.push("/focus");
+    }
+  };
+
+  const handleCancelTaskSwitch = () => {
+    setWarningModalVisible(false);
+    setPendingTaskSwitch(null);
   };
 
   const handleRemoveCompleted = (task: Task) => {
@@ -213,6 +269,13 @@ export default function Plan() {
         task={editTask}
         onSave={handleSaveEdit}
         onClose={() => setEditModalVisible(false)}
+      />
+      <TaskSwitchWarningModal
+        isVisible={warningModalVisible}
+        currentTaskName={getCurrentTask()?.name || ""}
+        newTaskName={pendingTaskSwitch?.name || ""}
+        onConfirm={handleConfirmTaskSwitch}
+        onCancel={handleCancelTaskSwitch}
       />
     </View>
   );

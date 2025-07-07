@@ -2,7 +2,7 @@ import { Task, TaskTag } from "@/store/taskStore";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import React, { useRef } from "react";
-import { Text, TouchableOpacity, View, Animated } from "react-native";
+import { Animated, Text, TouchableOpacity, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 
 interface TaskCardProps {
@@ -12,6 +12,7 @@ interface TaskCardProps {
   onComplete: (task: Task) => void;
   onPlay: (task: Task) => void;
   disabled?: boolean;
+  isActive?: boolean;
 }
 
 const tagColor: Record<Exclude<TaskTag, null> | "default", string> = {
@@ -29,13 +30,14 @@ export default function TaskCard({
   onComplete,
   onPlay,
   disabled,
+  isActive,
 }: TaskCardProps) {
   const swipeableRef = useRef<Swipeable>(null);
 
   // Render left (delete) action - iPhone Messages style
   const renderLeftActions = (
-    progress: Animated.AnimatedAddition,
-    dragX: Animated.AnimatedAddition
+    progress: Animated.Value,
+    dragX: Animated.Value
   ) => {
     const trans = dragX.interpolate({
       inputRange: [0, 50, 100, 101],
@@ -89,8 +91,8 @@ export default function TaskCard({
 
   // Render right (edit) action - iPhone Messages style
   const renderRightActions = (
-    progress: Animated.AnimatedAddition,
-    dragX: Animated.AnimatedAddition
+    progress: Animated.Value,
+    dragX: Animated.Value
   ) => {
     const trans = dragX.interpolate({
       inputRange: [-101, -100, -50, 0],
@@ -160,7 +162,7 @@ export default function TaskCard({
         }}
       >
         <View
-          className={`flex-row items-center bg-white dark:bg-gray-800 rounded-2xl py-5 px-4 shadow-sm ${task.completed ? "opacity-60" : ""}`}
+          className={`flex-row items-center bg-white dark:bg-gray-800 rounded-2xl py-5 px-4 shadow-sm ${task.completed ? "opacity-60" : ""} ${isActive ? "border-2 border-green-500" : ""}`}
           style={{
             borderRightColor: tagColor[task.tag ?? "default"],
             borderRightWidth: 6,
@@ -181,12 +183,25 @@ export default function TaskCard({
               <Ionicons name="ellipse-outline" size={28} color="#CBD5E1" />
             )}
           </TouchableOpacity>
-          <Text
-            className={`flex-1 text-lg font-SoraSemiBold text-text-primary ${task.completed ? "line-through text-gray-400" : ""}`}
-            numberOfLines={1}
-          >
-            {task.name}
-          </Text>
+
+          <View className="flex-1">
+            <Text
+              className={`text-lg font-SoraSemiBold text-text-primary ${task.completed ? "line-through text-gray-400" : ""}`}
+              numberOfLines={1}
+            >
+              {task.name}
+            </Text>
+            {isActive && (
+              <View className="flex-row items-center mt-1">
+                <View className="bg-green-500 rounded-full px-2 py-0.5">
+                  <Text className="text-white text-xs font-SoraSemiBold">
+                    Active
+                  </Text>
+                </View>
+              </View>
+            )}
+          </View>
+
           <TouchableOpacity
             className="ml-3 p-2 rounded-full"
             onPress={() => onPlay(task)}

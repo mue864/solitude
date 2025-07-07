@@ -1,3 +1,4 @@
+import WarningToast from "@/components/modals/WarningToast";
 import UndoToast from "@/components/undoToast";
 import { useSessionStore } from "@/store/sessionState";
 import { TransitionPresets } from "@react-navigation/stack";
@@ -80,6 +81,13 @@ export default function RootLayout() {
             undoToast: ({ text1, props }) => (
               <UndoToast
                 text1={text1 ?? ""}
+                onPress={props?.onPress ?? (() => {})}
+              />
+            ),
+            warningToast: ({ props }) => (
+              <WarningToast
+                text1={props?.text1 ?? ""}
+                text2={props?.text2}
                 onPress={props?.onPress ?? (() => {})}
               />
             ),

@@ -1,4 +1,4 @@
-import { Task, TaskTag } from "@/store/taskStore";
+import { Task, TaskTag, useTaskStore } from "@/store/taskStore";
 import React from "react";
 import { Text, View } from "react-native";
 import TaskCard from "./TaskCard";
@@ -30,6 +30,8 @@ export default function TaskGroup({
   onComplete,
   onPlay,
 }: TaskGroupProps) {
+  const currentTaskId = useTaskStore((state) => state.currentTaskId);
+
   if (!tasks || tasks.length === 0) return null;
   return (
     <View className="mb-2">
@@ -46,6 +48,7 @@ export default function TaskGroup({
           onEdit={onEdit}
           onComplete={onComplete}
           onPlay={onPlay}
+          isActive={task.id === currentTaskId}
         />
       ))}
     </View>
