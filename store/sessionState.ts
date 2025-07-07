@@ -271,6 +271,12 @@ export const useSessionStore = create<SessionState>()(
       // Mark the current session as completed
       completeSession: () =>
         set((state) => {
+          console.log("completeSession called with state:", {
+            currentFlowId: state.currentFlowId,
+            currentFlowStep: state.currentFlowStep,
+            sessionType: state.sessionType,
+            duration: state.duration,
+          });
           const today = new Date().toISOString().split("T")[0];
           const yesterday = new Date();
           yesterday.setDate(yesterday.getDate() - 1);
@@ -321,14 +327,19 @@ export const useSessionStore = create<SessionState>()(
           }
 
           // Handle flow logic first
-          if (
-            state.currentFlowId &&
-            state.currentFlowId in useFlowStore.getState().customFlows
-          ) {
+          if (state.currentFlowId) {
             const flow = useFlowStore
               .getState()
               .customFlows.find((f) => f.id === state.currentFlowId);
             const nextStep = state.currentFlowStep + 1;
+
+            console.log("Flow completion logic:", {
+              flowId: state.currentFlowId,
+              flow: flow,
+              currentStep: state.currentFlowStep,
+              nextStep: nextStep,
+              totalSteps: flow?.steps.length,
+            });
 
             if (nextStep < flow?.steps.length) {
               // Update the session data for the next step
@@ -351,7 +362,7 @@ export const useSessionStore = create<SessionState>()(
                 sessionId: Date.now().toString(),
                 showFlowCompletionModal: true,
                 flowCompletionData: {
-                  completedSessions: nextStep, // nextStep is already the number of completed sessions
+                  completedSessions: nextStep, // nextStep is the number of completed sessions (1-based)
                   totalSessions: flow.steps.length,
                   nextSessionType: flow.steps[nextStep].type,
                   nextSessionDuration: flow.steps[nextStep].duration,
@@ -491,14 +502,38 @@ export const useSessionStore = create<SessionState>()(
 
       // Flow completion actions
       continueFlow: () =>
-        set((state) => ({
-          ...state,
-          isRunning: true,
-          isPaused: false,
-          showFlowCompletionModal: false,
-          flowCompletionData: null,
-          sessionId: Date.now().toString(),
-        })),
+        set((state) => {
+          // Ensure we have the correct session data for the current flow step
+          if (state.currentFlowId) {
+            const flow = useFlowStore
+              .getState()
+              .customFlows.find((f) => f.id === state.currentFlowId);
+
+            if (flow && state.currentFlowStep < flow.steps.length) {
+              const currentStep = flow.steps[state.currentFlowStep];
+              return {
+                ...state,
+                sessionType: currentStep.type as SessionType,
+                duration: currentStep.duration,
+                isRunning: true,
+                isPaused: false,
+                showFlowCompletionModal: false,
+                flowCompletionData: null,
+                sessionId: Date.now().toString(),
+              };
+            }
+          }
+
+          // Fallback for non-flow sessions
+          return {
+            ...state,
+            isRunning: true,
+            isPaused: false,
+            showFlowCompletionModal: false,
+            flowCompletionData: null,
+            sessionId: Date.now().toString(),
+          };
+        }),
 
       pauseFlow: () =>
         set((state) => ({

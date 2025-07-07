@@ -165,9 +165,37 @@ export default function Focus() {
   console.log("Current flow:", currentFlowId);
   console.log("Current flow step:", currentFlowStep);
   console.log("Session type:", sessionType);
+  console.log("Flow completion modal:", {
+    showFlowCompletionModal,
+    flowCompletionData,
+  });
+
+  // Test function to manually trigger flow completion modal
+  const testFlowCompletion = () => {
+    console.log("Testing flow completion modal");
+    useSessionStore.setState({
+      showFlowCompletionModal: true,
+      flowCompletionData: {
+        completedSessions: 1,
+        totalSessions: 4,
+        nextSessionType: "Short Break",
+        nextSessionDuration: 5 * 60,
+        currentFlowName: "Test Flow",
+      },
+    });
+  };
 
   // Handle timer countdown
   useEffect(() => {
+    console.log("Timer effect triggered:", {
+      isRunning,
+      isPaused,
+      currentFlowId,
+      currentFlowStep,
+      showFlowCompletionModal,
+      duration,
+    });
+
     // Clear any existing interval when component unmounts or dependencies change
     const cleanup = () => {
       if (timerRef.current) {
@@ -178,12 +206,14 @@ export default function Focus() {
 
     // Only run the timer if running and not paused
     if (isRunning && !isPaused) {
+      console.log("Starting timer with duration:", duration);
       cleanup(); // Clear any existing timer to prevent duplicates
 
       timerRef.current = setInterval(() => {
         setDuration((currentDuration: number) => {
           // If we reach 0 or below, end the session
           if (currentDuration <= 1) {
+            console.log("Timer reached 0, completing session");
             cleanup();
             // Use setTimeout to allow state to update before starting next session
             setTimeout(() => {
@@ -205,21 +235,21 @@ export default function Focus() {
     } else if (
       !isRunning &&
       currentFlowId &&
-      currentFlowStep > 0 &&
-      !showFlowCompletionModal
+      !showFlowCompletionModal &&
+      duration > 0
     ) {
-      // If we're in a flow and not running, but should be, start the timer
-      // This handles the case when we transition to a new session in the flow
-      // But don't start if the flow completion modal is visible
+      // Auto-start the first session in a flow when it's initially selected
+      // This only happens when we're not paused and the modal isn't visible
+      console.log(
+        "Auto-starting initial flow session with duration:",
+        duration
+      );
       const timerId = setTimeout(() => {
         resumeSession();
-      }, 0);
+      }, 100);
 
       return () => clearTimeout(timerId);
     }
-
-    // Clean up on unmount or when dependencies change
-    return cleanup;
   }, [
     isRunning,
     isPaused,
@@ -229,6 +259,7 @@ export default function Focus() {
     currentFlowStep,
     resumeSession,
     showFlowCompletionModal,
+    duration, // Add duration as dependency to ensure timer restarts when duration changes
   ]);
 
   // Update duration when session type changes - only when not running and not paused
@@ -515,6 +546,18 @@ export default function Focus() {
               <View className="w-32">
                 <StartSessionBtn />
               </View>
+
+              {/* Test button for flow completion modal */}
+              {currentFlowId && (
+                <TouchableOpacity
+                  onPress={testFlowCompletion}
+                  className="mt-4 bg-red-500 px-4 py-2 rounded-lg"
+                >
+                  <Text className="text-white font-semibold">
+                    Test Flow Modal
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </View>
@@ -674,7 +717,7 @@ export default function Focus() {
       {showFlowCompletionModal && flowCompletionData && (
         <FlowCompletionModal
           isVisible={showFlowCompletionModal}
-          onClose={hideFlowCompletionModal}
+          onClose={() => {}} // Empty function since modal handles its own actions
           data={flowCompletionData}
         />
       )}
