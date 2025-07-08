@@ -1,4 +1,5 @@
 import WarningToast from "@/components/modals/WarningToast";
+import ReflectionSaveToast from "@/components/ReflectionSaveToast";
 import UndoToast from "@/components/undoToast";
 import { useSessionStore } from "@/store/sessionState";
 import { TransitionPresets } from "@react-navigation/stack";
@@ -89,6 +90,11 @@ export default function RootLayout() {
                 text1={props?.text1 ?? ""}
                 text2={props?.text2}
                 onPress={props?.onPress ?? (() => {})}
+              />
+            ),
+            reflectionSaveToast: ({ props }) => (
+              <ReflectionSaveToast
+                text1={props?.text1 ?? ""}
               />
             ),
             // You can keep the default toasts if you want:

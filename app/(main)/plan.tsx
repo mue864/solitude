@@ -6,7 +6,15 @@ import { Task, TaskTag, useTaskStore } from "@/store/taskStore";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useRef, useState } from "react";
-import { ScrollView, Text, TouchableOpacity, View } from "react-native";
+import {
+  LayoutAnimation,
+  Platform,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  UIManager,
+  View,
+} from "react-native";
 import Toast from "react-native-toast-message";
 
 const GROUPS: { label: string; tag: TaskTag }[] = [
@@ -15,6 +23,14 @@ const GROUPS: { label: string; tag: TaskTag }[] = [
   { label: "Deep Work", tag: "deepwork" },
   { label: "Quick Win", tag: "quickwin" },
 ];
+
+// Enable LayoutAnimation on Android
+if (
+  Platform.OS === "android" &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 export default function Plan() {
   const router = useRouter();
@@ -145,6 +161,7 @@ export default function Plan() {
   };
 
   const handleCompleteTask = (task: Task) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setCurrentTask(task.id);
     completeCurrentTask();
   };

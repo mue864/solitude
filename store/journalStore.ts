@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { nanoid } from "nanoid";
+import uuid from "react-native-uuid";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
@@ -31,7 +31,7 @@ export const useJournalStore = create<JournalStore>()(
         const date = now.toISOString().split("T")[0];
         const time = now.toTimeString().slice(0, 5);
         const entry: JournalEntry = {
-          id: nanoid(),
+          id: uuid.v4() as string,
           title,
           content,
           date,

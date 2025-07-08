@@ -17,10 +17,19 @@ import Edit from "@/assets/svg/edit.svg";
 import Streak from "@/assets/svg/streak.svg";
 
 // Components
+import ChangeSessionTimeCard from "@/components/modals/ChangeSessionTimeCard";
+import FlowCompletionModal from "@/components/modals/FlowCompletionModal";
+import QuickTaskModal from "@/components/modals/QuickTaskModal";
+import QuoteCard from "@/components/modals/QuoteCard";
+import SessionIntelligenceModal from "@/components/modals/SessionIntelligenceModal";
 import StartSessionBtn from "@/components/StartSessionBtn";
+import TodayProgress from "@/components/TodayProgress";
 
 // Store
-import { FlowIndicator } from "@/components/FlowIndicator";
+import FlowIndicator, { FlowDetailsModal } from "@/components/FlowIndicator";
+import AddJournalModal from "@/components/modals/AddJournalModal";
+import FlowsModal from "@/components/modals/FlowsModal";
+import SessionCompletionModal from "@/components/modals/SessionCompletionModal";
 import SessionIndicator from "@/components/SessionIndicator";
 import { useFlowStore } from "@/store/flowStore";
 import { useJournalStore } from "@/store/journalStore";
@@ -63,6 +72,9 @@ export default function Focus() {
 
   // --- Animation values ---
   const sessionControlsTranslateY = useRef(new Animated.Value(0)).current;
+
+  // NEW: Animation for progress expansion spacing
+  const progressSpacingAnim = useRef(new Animated.Value(0)).current;
 
   // --- State for reflection save toast ---
 
@@ -501,8 +513,8 @@ export default function Focus() {
 
   const [isProgressExpanded, setIsProgressExpanded] = useState(false);
   const progressAnim = useRef(new Animated.Value(0)).current;
-  const progressSpacingAnim = useRef(new Animated.Value(0)).current;
 
+  // NEW: Animate progress expansion spacing
   useEffect(() => {
     Animated.parallel([
       Animated.timing(progressAnim, {
@@ -510,8 +522,9 @@ export default function Focus() {
         duration: 300,
         useNativeDriver: false,
       }),
+      // Animate the spacing between progress and session controls
       Animated.timing(progressSpacingAnim, {
-        toValue: isProgressExpanded ? -150 : 0, // Adjust -150 to match expanded card height
+        toValue: isProgressExpanded ? -150 : 0, // Adjust this value based on your expanded card height
         duration: 300,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
@@ -548,7 +561,6 @@ export default function Focus() {
         {/* Main Content */}
 
         <View className="flex-1 items-center px-4">
-          {/* TodayProgress Card removed as requested */}
           {/* Session Type and Flow Selector (original position) */}
           <View className="w-full max-w-md mt-4 mb-4">
             <Animated.View
@@ -653,8 +665,13 @@ export default function Focus() {
               alignItems: "center",
               transform: [
                 {
-                  translateY: progressSpacingAnim,
+                  translateY: progressAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, -100],
+                  }),
                 },
+                // NEW: Add the progress spacing animation
+                { translateY: progressSpacingAnim },
               ],
             }}
           >
@@ -666,7 +683,6 @@ export default function Focus() {
                 alignItems: "center",
               }}
             >
-              {/* --- Timer Display --- */}
               <View className="items-center mb-8">
                 <View
                   className="bg-white dark:bg-gray-800 rounded-2xl px-8 py-6 border border-gray-100 dark:border-gray-700"
@@ -708,7 +724,7 @@ export default function Focus() {
                   </TouchableOpacity>
                 </View>
               </View>
-              {/* --- Start/Pause Button --- */}
+              {/* Start/Pause Button */}
               <View className="w-full items-center">
                 <View className="w-32">
                   <StartSessionBtn
@@ -718,7 +734,8 @@ export default function Focus() {
                   />
                 </View>
               </View>
-              {/* --- Add Task Button --- */}
+
+              {/* Add Task Button */}
               <View className="w-full items-center mt-6">
                 {/* Outer Animated.View for width (JS driver) */}
                 <Animated.View
@@ -774,45 +791,12 @@ export default function Focus() {
                             }`}
                           />
                           <Text
-                            className="flex-1 text-text-primary text-base font-SoraSemiBold"
-                            numberOfLines={1}
+                            className={`text-text-primary text-base font-SoraSemiBold ${currentTask.completed ? "line-through text-gray-400" : ""}`}
                           >
                             {currentTask.name}
                           </Text>
                         </View>
-                        <Ionicons
-                          name="chevron-forward"
-                          size={20}
-                          color="#A0AEC0"
-                        />
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity
-                        onPress={() => setIsQuickTaskModalVisible(true)}
-                        activeOpacity={0.9}
-                        className="flex-row items-center justify-center rounded-full px-5 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 shadow-sm"
-                        style={{
-                          minHeight: 48,
-                          shadowColor: "#000",
-                          shadowOffset: { width: 0, height: 2 },
-                          shadowOpacity: 0.08,
-                          shadowRadius: 8,
-                          elevation: 4,
-                        }}
-                      >
-                        <Ionicons name="add" size={20} color="#3B82F6" />
-                        <Text className="ml-2 text-blue-600 dark:text-blue-400 text-base font-SoraSemiBold">
-                          Add Task
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                  </Animated.View>
-                </Animated.View>
-              </View>
-            </Animated.View>
-          </Animated.View>
-        </View>
-      </View>
-    </View>
-  );
-}
+                        <View className="flex-row items-center gap-2">
+                          {!currentTask.completed && (
+                            <TouchableOpacity
+                              onPress={(e) => {
