@@ -257,8 +257,10 @@ export const useSessionStore = create<SessionState>()(
           set((state) => ({
             isRunning: false,
             isPaused: false,
-            duration:
-              SESSION_TYPES[state.sessionType] || SESSION_TYPES["Classic"],
+            currentFlowId: null,
+            currentFlowStep: 0,
+            sessionType: "Classic",
+            duration: SESSION_TYPES["Classic"],
           }));
         },
 
@@ -397,7 +399,6 @@ export const useSessionStore = create<SessionState>()(
             let newSessionType = "Classic"; // Default to Classic for non-flow sessions
             let newDuration = SESSION_TYPES["Classic"]; // Default to Classic duration
             let newFlowStep = state.currentFlowStep;
-
 
             // Check if this was a work session (Classic or Deep Focus)
             if (["Classic", "Deep Focus"].includes(state.sessionType)) {
@@ -581,16 +582,9 @@ export const useSessionStore = create<SessionState>()(
               // Reset flow if a session is missed
               currentFlowId: null,
               currentFlowStep: 0,
+              sessionType: "Classic",
+              duration: SESSION_TYPES["Classic"],
             };
-
-            // If we were in a flow, reset to the first session type
-            if (state.currentFlowId) {
-              const flow = useFlowStore
-                .getState()
-                .customFlows.find((f) => f.id === state.currentFlowId);
-              update.sessionType = flow?.steps[0].type as SessionType; // Ensure type safety
-              update.duration = flow?.steps[0].duration;
-            }
 
             return {
               ...state,

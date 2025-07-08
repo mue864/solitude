@@ -12,6 +12,7 @@ import {
   Text,
   TouchableWithoutFeedback,
   View,
+  Animated,
 } from "react-native";
 
 interface FlowsModalProps {
@@ -120,28 +121,68 @@ export default function FlowsModal({
       statusBarTranslucent={true}
       onRequestClose={onClose}
     >
-      <View className="flex-1 justify-center items-center bg-black/50">
+      <View className="flex-1 justify-center items-center bg-black/60">
         <Pressable className="absolute inset-0" onPress={onClose} />
-        <View className="w-full max-w-md bg-white dark:bg-gray-800 rounded-2xl m-4 max-h-[80vh]">
-          <View className="p-6">
-            <Text className="text-text-primary text-xl font-SoraSemiBold mb-6 text-center">
-              Choose Your Flow
-            </Text>
+        <View 
+          className="w-full max-w-md bg-white dark:bg-gray-800 rounded-3xl m-4 max-h-[85vh] overflow-hidden"
+          style={{
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 20 },
+            shadowOpacity: 0.25,
+            shadowRadius: 25,
+            elevation: 20,
+          }}
+        >
+          {/* Header with gradient background */}
+          <View className="relative">
+            <View 
+              className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-600"
+              style={{
+                background: 'linear-gradient(135deg, #3B82F6 0%, #8B5CF6 100%)',
+              }}
+            />
+            <View className="px-6 py-8 relative">
+              <View className="flex-row items-center justify-between mb-2">
+                <Text className="text-white text-2xl font-SoraBold">
+                  Choose Your Flow
+                </Text>
+                <Pressable
+                  onPress={onClose}
+                  className="w-8 h-8 rounded-full bg-white/20 items-center justify-center"
+                >
+                  <Ionicons name="close" size={20} color="white" />
+                </Pressable>
+              </View>
+              <Text className="text-white/80 text-sm font-Sora">
+                Select a breathing flow to begin your session
+              </Text>
+            </View>
+          </View>
 
-            {/* Create Flow Button */}
+          <View className="p-6">
+            {/* Create Flow Button - Enhanced */}
             <Pressable
               onPress={onCreateFlow}
-              className="bg-blue-500 mb-6 p-4 rounded-xl flex-row items-center justify-center gap-3 border-2 border-blue-600"
+              className="mb-6 p-4 rounded-2xl flex-row items-center justify-center gap-3 bg-gradient-to-r from-blue-500 to-blue-600 active:from-blue-600 active:to-blue-700"
+              style={{
+                shadowColor: "#3B82F6",
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.3,
+                shadowRadius: 8,
+                elevation: 6,
+              }}
             >
-              <Ionicons name="add" size={24} color="white" />
-              <Text className="text-white text-lg font-SoraSemiBold">
+              <View className="w-8 h-8 rounded-full bg-white/20 items-center justify-center">
+                <Ionicons name="add" size={18} color="white" />
+              </View>
+              <Text className="text-white text-lg font-SoraBold">
                 Create New Flow
               </Text>
             </Pressable>
 
             <ScrollView
               showsVerticalScrollIndicator={false}
-              style={{ maxHeight: 400 }}
+              style={{ maxHeight: 420 }}
               contentContainerStyle={{ paddingBottom: 20 }}
             >
               <View className="gap-4">
@@ -160,41 +201,63 @@ export default function FlowsModal({
                   return (
                     <View
                       key={category}
-                      className="bg-gray-50 dark:bg-gray-700 rounded-xl p-4"
+                      className="bg-gray-50/80 dark:bg-gray-700/50 rounded-2xl overflow-hidden"
+                      style={{
+                        shadowColor: "#000",
+                        shadowOffset: { width: 0, height: 2 },
+                        shadowOpacity: 0.05,
+                        shadowRadius: 8,
+                        elevation: 2,
+                      }}
                     >
-                      {/* Collapsible Category Header */}
+                      {/* Enhanced Category Header */}
                       <Pressable
                         onPress={() => toggleCategory(category as FlowCategory)}
-                        className="flex-row items-center justify-between mb-3"
+                        className="p-5 flex-row items-center justify-between bg-white/60 dark:bg-gray-600/60 backdrop-blur-sm"
                       >
                         <View className="flex-row items-center gap-3 flex-1">
-                          <Text className="text-2xl">{categoryInfo.icon}</Text>
-                          <Text className="text-text-primary text-lg font-SoraSemiBold">
-                            {categoryInfo.name}
-                          </Text>
-                          <View className="bg-gray-200 dark:bg-gray-600 rounded-full px-2 py-1">
-                            <Text className="text-text-secondary text-xs font-SoraSemiBold">
-                              {flows.length}
+                          <View 
+                            className="w-12 h-12 rounded-2xl items-center justify-center"
+                            style={{ backgroundColor: `${categoryColor}20` }}
+                          >
+                            <Text className="text-2xl">{categoryInfo.icon}</Text>
+                          </View>
+                          <View className="flex-1">
+                            <Text className="text-text-primary text-lg font-SoraBold">
+                              {categoryInfo.name}
+                            </Text>
+                            <Text className="text-text-secondary text-sm font-Sora">
+                              {flows.length} {flows.length === 1 ? 'flow' : 'flows'}
                             </Text>
                           </View>
                         </View>
-                        <View className="flex-row items-center gap-2">
+                        <View className="flex-row items-center gap-3">
                           <View
-                            className="w-3 h-3 rounded-full"
-                            style={{ backgroundColor: categoryColor }}
+                            className="w-4 h-4 rounded-full"
+                            style={{ 
+                              backgroundColor: categoryColor,
+                              shadowColor: categoryColor,
+                              shadowOffset: { width: 0, height: 2 },
+                              shadowOpacity: 0.3,
+                              shadowRadius: 4,
+                            }}
                           />
-                          <Ionicons
-                            name={isExpanded ? "chevron-up" : "chevron-down"}
-                            size={20}
-                            color="#6B7280"
-                          />
+                          <View 
+                            className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-500 items-center justify-center"
+                          >
+                            <Ionicons
+                              name={isExpanded ? "chevron-up" : "chevron-down"}
+                              size={16}
+                              color="#6B7280"
+                            />
+                          </View>
                         </View>
                       </Pressable>
 
-                      {/* Flows in this category - Collapsible */}
+                      {/* Enhanced Flow Cards */}
                       {isExpanded && (
-                        <View className="gap-3">
-                          {flows.map((flow) => {
+                        <View className="px-3 pb-3 gap-3">
+                          {flows.map((flow, index) => {
                             const totalDuration = flow.steps.reduce(
                               (total, step) => total + step.duration,
                               0
@@ -204,73 +267,94 @@ export default function FlowsModal({
                               <Pressable
                                 key={flow.id}
                                 onPress={() => handleFlowSelect(flow.id)}
-                                className="bg-white dark:bg-gray-600 p-4 rounded-xl border border-gray-200 dark:border-gray-500"
+                                className="bg-white dark:bg-gray-600 rounded-2xl border border-gray-100 dark:border-gray-500 overflow-hidden active:scale-[0.98]"
+                                style={{
+                                  shadowColor: "#000",
+                                  shadowOffset: { width: 0, height: 2 },
+                                  shadowOpacity: 0.08,
+                                  shadowRadius: 8,
+                                  elevation: 3,
+                                }}
                               >
-                                <View className="flex-row items-start justify-between mb-2">
-                                  <View className="flex-1">
-                                    <Text className="text-text-primary text-lg font-SoraSemiBold mb-1">
-                                      {flow.name}
-                                    </Text>
-                                    <Text className="text-text-secondary text-sm">
-                                      {flow.steps
-                                        .map((s) => s.type)
-                                        .join(" → ")}
-                                    </Text>
+                                {/* Flow card header with gradient accent */}
+                                <View 
+                                  className="h-1"
+                                  style={{ backgroundColor: categoryColor }}
+                                />
+                                
+                                <View className="p-4">
+                                  <View className="flex-row items-start justify-between mb-3">
+                                    <View className="flex-1">
+                                      <Text className="text-text-primary text-lg font-SoraBold mb-1">
+                                        {flow.name}
+                                      </Text>
+                                      <Text className="text-text-secondary text-sm font-Sora">
+                                        {flow.steps.map((s) => s.type).join(" → ")}
+                                      </Text>
+                                    </View>
+                                    <View className="flex-row items-center gap-2">
+                                      {!flow.readonly && (
+                                        <>
+                                          <Pressable
+                                            onPress={(e) => {
+                                              e.stopPropagation();
+                                              onEditFlow(flow.id);
+                                            }}
+                                            className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-500 items-center justify-center"
+                                          >
+                                            <Ionicons
+                                              name="pencil"
+                                              size={14}
+                                              color="#6B7280"
+                                            />
+                                          </Pressable>
+                                          <Pressable
+                                            onPress={(e) => {
+                                              e.stopPropagation();
+                                              handleDeleteFlow(flow.id, flow.name);
+                                            }}
+                                            className="w-8 h-8 rounded-full bg-red-50 dark:bg-red-900/30 items-center justify-center"
+                                          >
+                                            <Ionicons
+                                              name="trash-outline"
+                                              size={14}
+                                              color="#EF4444"
+                                            />
+                                          </Pressable>
+                                        </>
+                                      )}
+                                    </View>
                                   </View>
-                                  <View className="flex-row items-center gap-2">
-                                    <View
-                                      className="w-3 h-3 rounded-full"
-                                      style={{
-                                        backgroundColor: categoryColor,
-                                      }}
-                                    />
-                                    {/* Edit/Delete buttons for custom flows */}
-                                    {!flow.readonly && (
-                                      <>
-                                        <Pressable
-                                          onPress={(e) => {
-                                            e.stopPropagation();
-                                            onEditFlow(flow.id);
-                                          }}
-                                          className="p-1"
-                                        >
-                                          <Ionicons
-                                            name="pencil"
-                                            size={16}
-                                            color="#6B7280"
-                                          />
-                                        </Pressable>
-                                        <Pressable
-                                          onPress={(e) => {
-                                            e.stopPropagation();
-                                            handleDeleteFlow(
-                                              flow.id,
-                                              flow.name
-                                            );
-                                          }}
-                                          className="p-1"
-                                        >
-                                          <Ionicons
-                                            name="trash-outline"
-                                            size={16}
-                                            color="#EF4444"
-                                          />
-                                        </Pressable>
-                                      </>
-                                    )}
-                                  </View>
-                                </View>
 
-                                <View className="flex-row items-center gap-3">
-                                  <View className="bg-gray-100 dark:bg-gray-500 rounded-full px-3 py-1">
-                                    <Text className="text-text-secondary text-xs font-SoraSemiBold">
-                                      {Math.floor(totalDuration / 60)} min
-                                    </Text>
-                                  </View>
-                                  <View className="bg-gray-100 dark:bg-gray-500 rounded-full px-3 py-1">
-                                    <Text className="text-text-secondary text-xs font-SoraSemiBold">
-                                      {flow.steps.length} steps
-                                    </Text>
+                                  {/* Enhanced flow stats */}
+                                  <View className="flex-row items-center gap-2">
+                                    <View 
+                                      className="bg-gray-50 dark:bg-gray-500 rounded-full px-3 py-1.5 flex-row items-center gap-1"
+                                    >
+                                      <Ionicons name="time-outline" size={12} color="#6B7280" />
+                                      <Text className="text-text-secondary text-xs font-SoraBold">
+                                        {Math.floor(totalDuration / 60)} min
+                                      </Text>
+                                    </View>
+                                    <View 
+                                      className="bg-gray-50 dark:bg-gray-500 rounded-full px-3 py-1.5 flex-row items-center gap-1"
+                                    >
+                                      <Ionicons name="list-outline" size={12} color="#6B7280" />
+                                      <Text className="text-text-secondary text-xs font-SoraBold">
+                                        {flow.steps.length} steps
+                                      </Text>
+                                    </View>
+                                    <View 
+                                      className="bg-gray-50 dark:bg-gray-500 rounded-full px-3 py-1.5 flex-row items-center gap-1"
+                                    >
+                                      <View 
+                                        className="w-2 h-2 rounded-full"
+                                        style={{ backgroundColor: categoryColor }}
+                                      />
+                                      <Text className="text-text-secondary text-xs font-SoraBold">
+                                        {categoryInfo.name}
+                                      </Text>
+                                    </View>
                                   </View>
                                 </View>
                               </Pressable>
@@ -283,14 +367,17 @@ export default function FlowsModal({
                 })}
               </View>
 
-              {/* Empty State */}
+              {/* Enhanced Empty State */}
               {Object.values(orderedCategories).flat().length === 0 && (
-                <View className="items-center py-8">
-                  <Text className="text-text-secondary text-lg font-SoraSemiBold mb-2">
+                <View className="items-center py-12">
+                  <View className="w-20 h-20 rounded-full bg-gray-100 dark:bg-gray-700 items-center justify-center mb-4">
+                    <Ionicons name="flower-outline" size={32} color="#6B7280" />
+                  </View>
+                  <Text className="text-text-primary text-xl font-SoraBold mb-2">
                     No flows available
                   </Text>
-                  <Text className="text-text-secondary text-sm text-center">
-                    Try refreshing the app or check the flow store
+                  <Text className="text-text-secondary text-sm text-center px-8 leading-5">
+                    Create your first breathing flow to get started on your mindfulness journey
                   </Text>
                 </View>
               )}
@@ -299,7 +386,7 @@ export default function FlowsModal({
         </View>
       </View>
 
-      {/* Custom Delete Modal */}
+      {/* Enhanced Delete Modal */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -307,49 +394,58 @@ export default function FlowsModal({
         onRequestClose={handleDeleteCancel}
       >
         <TouchableWithoutFeedback onPress={handleDeleteCancel}>
-          <View className="flex-1 bg-black/50 justify-center items-center px-4">
+          <View className="flex-1 bg-black/60 justify-center items-center px-4">
             <TouchableWithoutFeedback>
               <View
-                className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-sm border border-gray-100 dark:border-gray-700"
+                className="bg-white dark:bg-gray-800 rounded-3xl p-6 w-full max-w-sm border border-gray-100 dark:border-gray-700 overflow-hidden"
                 style={{
                   shadowColor: "#000",
-                  shadowOffset: { width: 0, height: 8 },
-                  shadowOpacity: 0.15,
-                  shadowRadius: 16,
-                  elevation: 8,
+                  shadowOffset: { width: 0, height: 20 },
+                  shadowOpacity: 0.25,
+                  shadowRadius: 25,
+                  elevation: 20,
                 }}
               >
-                <View className="flex-row items-center gap-2 mb-3">
-                  <View className="w-1.5 h-1.5 bg-red-500 rounded-full" />
-                  <Text className="text-2xl font-SoraBold text-text-primary">
+                {/* Warning accent */}
+                <View className="w-full h-1 bg-gradient-to-r from-red-500 to-red-600 -mx-6 -mt-6 mb-6" />
+                
+                <View className="items-center mb-6">
+                  <View className="w-16 h-16 rounded-full bg-red-50 dark:bg-red-900/30 items-center justify-center mb-4">
+                    <Ionicons name="warning" size={32} color="#EF4444" />
+                  </View>
+                  <Text className="text-xl font-SoraBold text-text-primary text-center mb-2">
                     Delete Flow
                   </Text>
+                  <Text className="text-base font-Sora text-text-secondary text-center leading-6">
+                    Are you sure you want to delete{" "}
+                    <Text className="font-SoraBold text-text-primary">
+                      "{flowToDelete?.name}"
+                    </Text>
+                    ? This action cannot be undone.
+                  </Text>
                 </View>
-                <Text className="text-base font-Sora text-text-secondary mb-6">
-                  Are you sure you want to delete "{flowToDelete?.name}"? This
-                  action cannot be undone.
-                </Text>
-                <View className="flex-row justify-end gap-3">
+
+                <View className="flex-row gap-3">
                   <Pressable
                     onPress={handleDeleteCancel}
-                    className="bg-gray-100 dark:bg-gray-700 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-600"
+                    className="flex-1 bg-gray-100 dark:bg-gray-700 py-3 rounded-xl border border-gray-200 dark:border-gray-600 items-center justify-center"
                   >
-                    <Text className="text-base font-SoraSemiBold text-text-secondary">
+                    <Text className="text-base font-SoraBold text-text-secondary">
                       Cancel
                     </Text>
                   </Pressable>
                   <Pressable
                     onPress={handleDeleteConfirm}
-                    className="bg-red-500 px-4 py-2 rounded-lg"
+                    className="flex-1 bg-red-500 py-3 rounded-xl items-center justify-center"
                     style={{
                       shadowColor: "#EF4444",
-                      shadowOffset: { width: 0, height: 2 },
-                      shadowOpacity: 0.2,
-                      shadowRadius: 4,
-                      elevation: 3,
+                      shadowOffset: { width: 0, height: 4 },
+                      shadowOpacity: 0.3,
+                      shadowRadius: 8,
+                      elevation: 6,
                     }}
                   >
-                    <Text className="text-base font-SoraSemiBold text-white">
+                    <Text className="text-base font-SoraBold text-white">
                       Delete
                     </Text>
                   </Pressable>

@@ -1,4 +1,6 @@
+import { useSessionIntelligence } from "@/store/sessionIntelligence";
 import { useSessionStore } from "@/store/sessionState";
+import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import { BlurView } from "expo-blur";
 import { useEffect, useState } from "react";
@@ -32,22 +34,29 @@ interface FlowCompletionModalProps {
     nextSessionDuration: number;
     currentFlowName: string;
   };
+  onReflect?: () => void;
+  onViewInsights?: () => void;
 }
 
 const FlowCompletionModal = ({
   isVisible,
   onClose,
   data,
+  onReflect,
+  onViewInsights,
 }: FlowCompletionModalProps) => {
   const { continueFlow, pauseFlow, endFlow } = useSessionStore();
   const [countdown, setCountdown] = useState(8);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const { getProductivityInsights } = useSessionIntelligence();
+  const insights = getProductivityInsights();
 
   // Animation values
   const scale = useSharedValue(0);
   const opacity = useSharedValue(0);
   const progressWidth = useSharedValue(0);
   const checkmarkScale = useSharedValue(0);
+  const confettiScale = useSharedValue(0);
 
   // Load sound effect
   useEffect(() => {
@@ -90,8 +99,16 @@ const FlowCompletionModal = ({
         withSpring(1, { damping: 15 })
       );
 
-      // Start countdown only if not flow complete
+      // Animate confetti for flow completion
       const isFlowComplete = data.nextSessionType === "Flow Complete";
+      if (isFlowComplete) {
+        confettiScale.value = withSequence(
+          withSpring(1.3, { damping: 8 }),
+          withSpring(1, { damping: 15 })
+        );
+      }
+
+      // Start countdown only if not flow complete
       if (!isFlowComplete) {
         const countdownDuration = getCountdownDuration(data.nextSessionType);
         setCountdown(countdownDuration);
@@ -117,6 +134,7 @@ const FlowCompletionModal = ({
       opacity.value = withTiming(0, { duration: 200 });
       progressWidth.value = 0;
       checkmarkScale.value = 0;
+      confettiScale.value = 0;
     }
   }, [
     isVisible,
@@ -140,6 +158,10 @@ const FlowCompletionModal = ({
     transform: [{ scale: checkmarkScale.value }],
   }));
 
+  const confettiStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: confettiScale.value }],
+  }));
+
   const handleContinue = () => {
     Vibration.vibrate(50);
     continueFlow();
@@ -155,11 +177,24 @@ const FlowCompletionModal = ({
     endFlow();
   };
 
+  const handleReflect = () => {
+    Vibration.vibrate(50);
+    onReflect?.();
+  };
+
+  const handleViewInsights = () => {
+    Vibration.vibrate(50);
+    onViewInsights?.();
+  };
+
   const progressPercentage = Math.round(
     (data.completedSessions / data.totalSessions) * 100
   );
   const nextSessionMinutes = Math.floor(data.nextSessionDuration / 60);
   const isFlowComplete = data.nextSessionType === "Flow Complete";
+
+  // Calculate total flow duration (approximate)
+  const totalFlowMinutes = Math.floor((data.totalSessions * 25) / 60); // Assuming 25 min per session
 
   return (
     <Modal
@@ -174,25 +209,84 @@ const FlowCompletionModal = ({
           className="w-full h-full justify-center items-center"
         >
           <Animated.View
-            className="w-[90%] max-w-md bg-tab-bg rounded-2xl shadow-xl overflow-hidden"
+            className="w-[90%] max-w-md bg-white dark:bg-gray-900 rounded-2xl shadow-xl overflow-hidden"
             style={modalStyle}
           >
             <View className="p-6">
-              {/* Header with checkmark */}
+              {/* Header with celebration */}
               <View className="items-center mb-6">
-                <Animated.View
-                  className="w-16 h-16 bg-green-500 rounded-full items-center justify-center mb-4"
-                  style={checkmarkStyle}
-                >
-                  <Text className="text-white text-2xl font-SoraBold">✓</Text>
-                </Animated.View>
-                <Text className="text-text-primary text-xl font-SoraBold text-center">
-                  Session Complete!
-                </Text>
-                <Text className="text-text-secondary text-base font-SoraSemiBold text-center mt-1">
-                  {data.completedSessions} of {data.totalSessions} sessions done
-                </Text>
+                {isFlowComplete ? (
+                  // Flow completion celebration
+                  <View className="items-center">
+                    <Animated.View
+                      className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full items-center justify-center mb-4"
+                      style={confettiStyle}
+                    >
+                      <Ionicons name="trophy" size={32} color="#fff" />
+                    </Animated.View>
+                    <Text className="text-text-primary text-2xl font-SoraBold text-center">
+                      Flow Complete! 🎉
+                    </Text>
+                    <Text className="text-text-secondary text-base font-SoraSemiBold text-center mt-1">
+                      You've completed {data.totalSessions} sessions
+                    </Text>
+                  </View>
+                ) : (
+                  // Session completion
+                  <View className="items-center">
+                    <Animated.View
+                      className="w-16 h-16 bg-green-500 rounded-full items-center justify-center mb-4"
+                      style={checkmarkStyle}
+                    >
+                      <Text className="text-white text-2xl font-SoraBold">
+                        ✓
+                      </Text>
+                    </Animated.View>
+                    <Text className="text-text-primary text-xl font-SoraBold text-center">
+                      Session Complete!
+                    </Text>
+                    <Text className="text-text-secondary text-base font-SoraSemiBold text-center mt-1">
+                      {data.completedSessions} of {data.totalSessions} sessions
+                      done
+                    </Text>
+                  </View>
+                )}
               </View>
+
+              {/* Flow metrics for flow completion */}
+              {isFlowComplete && (
+                <View className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-xl p-4 mb-6 border border-blue-100 dark:border-blue-800/50">
+                  <Text className="text-text-primary text-base font-SoraSemiBold mb-3 text-center">
+                    Flow Achievement
+                  </Text>
+                  <View className="flex-row justify-between items-center">
+                    <View className="items-center">
+                      <Text className="text-text-primary text-2xl font-SoraBold">
+                        {data.totalSessions}
+                      </Text>
+                      <Text className="text-text-secondary text-xs font-SoraSemiBold">
+                        Sessions
+                      </Text>
+                    </View>
+                    <View className="items-center">
+                      <Text className="text-text-primary text-2xl font-SoraBold">
+                        ~{totalFlowMinutes}m
+                      </Text>
+                      <Text className="text-text-secondary text-xs font-SoraSemiBold">
+                        Total Time
+                      </Text>
+                    </View>
+                    <View className="items-center">
+                      <Text className="text-text-primary text-2xl font-SoraBold">
+                        100%
+                      </Text>
+                      <Text className="text-text-secondary text-xs font-SoraSemiBold">
+                        Complete
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              )}
 
               {/* Progress visualization */}
               <View className="mb-6">
@@ -206,9 +300,9 @@ const FlowCompletionModal = ({
                 </View>
 
                 {/* Progress bar */}
-                <View className="w-full bg-gray-200 rounded-full h-3 overflow-hidden mb-3">
+                <View className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden mb-3">
                   <Animated.View
-                    className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full"
+                    className="h-full bg-gradient-to-r from-blue-500 to-purple-600 rounded-full"
                     style={[
                       progressStyle,
                       {
@@ -230,7 +324,7 @@ const FlowCompletionModal = ({
                         className={`w-6 h-6 rounded-full items-center justify-center mb-1 ${
                           index < data.completedSessions
                             ? "bg-green-500"
-                            : "bg-gray-300"
+                            : "bg-gray-300 dark:bg-gray-600"
                         }`}
                       >
                         {index < data.completedSessions ? (
@@ -238,7 +332,7 @@ const FlowCompletionModal = ({
                             ✓
                           </Text>
                         ) : (
-                          <Text className="text-gray-500 text-xs font-SoraBold">
+                          <Text className="text-gray-500 dark:text-gray-400 text-xs font-SoraBold">
                             {index + 1}
                           </Text>
                         )}
@@ -251,17 +345,31 @@ const FlowCompletionModal = ({
                 </View>
               </View>
 
-              {/* Next session info */}
-              <View className="bg-primary/20 rounded-xl p-4 mb-6">
-                <Text className="text-text-primary text-base font-SoraSemiBold mb-1">
-                  {isFlowComplete ? "Flow Status" : "Next Session"}
-                </Text>
-                <Text className="text-text-secondary text-sm">
-                  {isFlowComplete
-                    ? "Flow Complete! 🎉"
-                    : `${data.nextSessionType} • ${nextSessionMinutes} min`}
-                </Text>
-              </View>
+              {/* Flow insights for flow completion */}
+              {isFlowComplete && (
+                <View className="mb-6">
+                  <Text className="text-text-secondary text-sm font-SoraSemiBold mb-2">
+                    Flow Insights
+                  </Text>
+                  <Text className="text-text-primary text-base font-SoraSemiBold">
+                    {insights.recommendations.length > 0
+                      ? insights.recommendations[0]
+                      : `Amazing work! You've completed an entire flow. This shows great consistency and focus.`}
+                  </Text>
+                </View>
+              )}
+
+              {/* Next session info for ongoing flows */}
+              {!isFlowComplete && (
+                <View className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 mb-6 border border-blue-100 dark:border-blue-800/50">
+                  <Text className="text-text-primary text-base font-SoraSemiBold mb-1">
+                    Next Session
+                  </Text>
+                  <Text className="text-text-secondary text-sm">
+                    {data.nextSessionType} • {nextSessionMinutes} min
+                  </Text>
+                </View>
+              )}
 
               {/* Countdown - only show if not flow complete */}
               {!isFlowComplete && (
@@ -281,6 +389,7 @@ const FlowCompletionModal = ({
               {/* Action buttons */}
               <View className="gap-3">
                 {!isFlowComplete ? (
+                  // Ongoing flow actions
                   <>
                     <TouchableOpacity
                       onPress={handleContinue}
@@ -294,7 +403,7 @@ const FlowCompletionModal = ({
 
                     <TouchableOpacity
                       onPress={handlePause}
-                      className="bg-gray-100 py-3 rounded-xl items-center"
+                      className="bg-gray-100 dark:bg-gray-800 py-3 rounded-xl items-center"
                       activeOpacity={0.8}
                     >
                       <Text className="text-text-primary text-sm font-SoraSemiBold">
@@ -313,15 +422,38 @@ const FlowCompletionModal = ({
                     </TouchableOpacity>
                   </>
                 ) : (
-                  <TouchableOpacity
-                    onPress={handleEnd}
-                    className="bg-blue-500 py-4 rounded-xl items-center"
-                    activeOpacity={0.8}
-                  >
-                    <Text className="text-white text-base font-SoraSemiBold">
-                      Done
-                    </Text>
-                  </TouchableOpacity>
+                  // Flow completion actions
+                  <>
+                    <TouchableOpacity
+                      onPress={handleReflect}
+                      className="bg-blue-500 py-4 rounded-xl items-center"
+                      activeOpacity={0.8}
+                    >
+                      <Text className="text-white text-base font-SoraSemiBold">
+                        Reflect on Flow
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={handleViewInsights}
+                      className="bg-gray-100 dark:bg-gray-800 py-3 rounded-xl items-center"
+                      activeOpacity={0.8}
+                    >
+                      <Text className="text-text-primary text-sm font-SoraSemiBold">
+                        View Insights
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={handleEnd}
+                      className="py-3 rounded-xl items-center"
+                      activeOpacity={0.8}
+                    >
+                      <Text className="text-text-secondary text-sm font-SoraSemiBold">
+                        Done
+                      </Text>
+                    </TouchableOpacity>
+                  </>
                 )}
               </View>
             </View>
