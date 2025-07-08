@@ -8,33 +8,39 @@ import {
   Vibration,
   View,
 } from "react-native";
+import * as Haptics from "expo-haptics";
 
-const StartSessionBtn = () => {
+interface StartSessionBtnProps {
+  onStart: () => void;
+  onPause: () => void;
+  onReset: () => void;
+}
+
+const StartSessionBtn: React.FC<StartSessionBtnProps> = ({
+  onStart,
+  onPause,
+  onReset,
+}) => {
   const [showAlert, setShowAlert] = React.useState(false);
-  const {
-    isRunning,
-    isPaused,
-    pauseSession,
-    resumeSession,
-    missSession,
-    reset,
-  } = useSessionStore();
+  const { isRunning, isPaused, missSession, reset } = useSessionStore();
 
   const handlePress = () => {
     if (isRunning) {
-      pauseSession();
+      onPause();
     } else {
-      resumeSession();
+      onStart();
     }
   };
+
   const handleLongPress = () => {
     if (!isRunning) return;
-    Vibration.vibrate(50);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     setShowAlert(true);
   };
 
   const handleCancelSession = () => {
     setShowAlert(false);
+    onReset();
     missSession();
     reset();
   };
@@ -52,11 +58,7 @@ const StartSessionBtn = () => {
   return (
     <TouchableOpacity
       className={`rounded-full p-5 ${
-        isRunning
-          ? "bg-red-500"
-          : isPaused
-            ? "bg-amber-500"
-            : "bg-blue-600"
+        isRunning ? "bg-red-500" : isPaused ? "bg-amber-500" : "bg-blue-600"
       }`}
       onPress={handlePress}
       onLongPress={handleLongPress}

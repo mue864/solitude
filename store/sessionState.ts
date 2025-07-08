@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { AppState } from "react-native";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { useFlowStore } from "./flowStore";
@@ -110,506 +111,644 @@ export interface SessionState {
 
 export const useSessionStore = create<SessionState>()(
   persist(
-    (set, get) => ({
-      // Initial state
-      sessionType: "Classic",
-      duration: SESSION_TYPES["Classic"],
-      isRunning: false,
-      isPaused: false,
-      currentFlowId: null,
-      currentFlowStep: 0,
-      sessionId: Date.now().toString(),
-      showFlowCompletionModal: false,
-      flowCompletionData: null,
-      completedPomodoros: 0,
-      completedSessions: 0,
-      missedSessions: 0,
-      totalSessions: 8,
-      currentStreak: 0,
-      longestStreak: 0,
-      lastSessionDate: null,
+    (set, get) => {
+      let startTimeRef: number | null = null;
+      let pausedTimeRef = 0;
+      let intervalRef: NodeJS.Timeout | null = null;
+      let backgroundTimeRef: number | null = null;
+      let initialDurationRef: number | null = null;
+      let lastPauseTimeRef: number | null = null;
 
-      // Set a specific session type
-      setSessionType: (type) => {
-        const newDuration = SESSION_TYPES[type] || SESSION_TYPES["Classic"];
-        set({
-          sessionType: type,
-          duration: newDuration,
-          isRunning: false,
-          isPaused: false,
-          currentFlowId: null, // Clear current flow when manually setting session
-          currentFlowStep: 0,
+      const cleanup = () => {
+        if (intervalRef) {
+          clearInterval(intervalRef);
+          intervalRef = null;
+        }
+      };
+
+      const updateTimer = () => {
+        if (!startTimeRef || !initialDurationRef || get().isPaused) return;
+
+        const now = Date.now();
+        const elapsedMs = now - startTimeRef - pausedTimeRef;
+        const elapsedSeconds = Math.floor(elapsedMs / 1000);
+        const remaining = Math.max(0, initialDurationRef - elapsedSeconds);
+
+        set({ duration: remaining });
+
+        if (remaining <= 0) {
+          cleanup();
+          set({ isRunning: false, isPaused: false });
+          get().completeSession();
+        }
+      };
+
+      // Set up app state change listener
+      if (typeof window !== "undefined") {
+        AppState.addEventListener("change", (nextAppState) => {
+          const state = get();
+          if (!state.isRunning) return;
+
+          if (nextAppState === "background") {
+            backgroundTimeRef = Date.now();
+            cleanup();
+          } else if (nextAppState === "active" && backgroundTimeRef) {
+            const backgroundDuration = Date.now() - backgroundTimeRef;
+            pausedTimeRef += backgroundDuration;
+            backgroundTimeRef = null;
+
+            if (startTimeRef && initialDurationRef) {
+              const elapsedMs = Date.now() - startTimeRef - pausedTimeRef;
+              const elapsedSeconds = Math.floor(elapsedMs / 1000);
+              const remaining = Math.max(
+                0,
+                initialDurationRef - elapsedSeconds
+              );
+
+              if (remaining <= 0) {
+                cleanup();
+                set({ isRunning: false, isPaused: false });
+                state.completeSession();
+              } else {
+                set({ duration: remaining });
+                if (!state.isPaused) {
+                  intervalRef = setInterval(updateTimer, 1000);
+                }
+              }
+            }
+          }
         });
-      },
+      }
 
-      // Start a predefined flow
-      startFlow: (flowId) => {
-        console.log("Starting flow:", flowId);
-        const flow = useFlowStore
-          .getState()
-          .customFlows.find((f) => f.id === flowId);
-        console.log("Flow data:", flow);
+      return {
+        // Initial state
+        sessionType: "Classic",
+        duration: SESSION_TYPES["Classic"],
+        isRunning: false,
+        isPaused: false,
+        currentFlowId: null,
+        currentFlowStep: 0,
+        sessionId: Date.now().toString(),
+        showFlowCompletionModal: false,
+        flowCompletionData: null,
+        completedPomodoros: 0,
+        completedSessions: 0,
+        missedSessions: 0,
+        totalSessions: 8,
+        currentStreak: 0,
+        longestStreak: 0,
+        lastSessionDate: null,
 
-        if (!flow || flow.steps.length === 0) {
-          console.log("Invalid or empty flow");
-          return;
-        }
-
-        const firstSession = flow.steps[0];
-        console.log("First session:", firstSession);
-
-        // Clear any existing intervals
-        if (get().isRunning) {
-          console.log("Stopping current session");
+        // Actions
+        setSessionType: (type) => {
+          cleanup();
+          const newDuration = SESSION_TYPES[type] || SESSION_TYPES["Classic"];
           set({
+            sessionType: type,
+            duration: newDuration,
             isRunning: false,
             isPaused: false,
-          });
-        }
-
-        const newState = {
-          currentFlowId: flowId,
-          currentFlowStep: 0,
-          sessionType: firstSession.type as SessionType,
-          duration: firstSession.duration,
-          isRunning: false,
-          isPaused: false,
-          sessionId: Date.now().toString(),
-        };
-
-        console.log("Setting new state:", newState);
-        set(newState);
-      },
-
-      // Move to the next session in the current flow
-      nextSession: () => {
-        const { currentFlowId, currentFlowStep, sessionType } = get();
-
-        if (get().currentFlowStep > 0) {
-          // If we're in a flow but not at the first step, reset to the first step
-          return set({
-            ...get(),
-            isRunning: false,
-            isPaused: false,
-            currentFlowStep: 0,
-            duration: currentFlowId
-              ? useFlowStore
-                  .getState()
-                  .customFlows.find((f) => f.id === currentFlowId)?.steps[0]
-                  .duration
-              : SESSION_TYPES[sessionType],
-          });
-        }
-
-        if (!currentFlowId) return; // No active flow
-
-        const flow = useFlowStore
-          .getState()
-          .customFlows.find((f) => f.id === currentFlowId);
-        const nextStep = currentFlowStep + 1;
-
-        if (nextStep >= flow?.steps.length || !flow) {
-          // End of flow
-          set({
             currentFlowId: null,
             currentFlowStep: 0,
+          });
+          startTimeRef = null;
+          pausedTimeRef = 0;
+          initialDurationRef = newDuration;
+          lastPauseTimeRef = null;
+        },
+
+        resumeSession: () => {
+          const state = get();
+          if (state.isRunning && !state.isPaused) return;
+
+          if (state.isPaused && lastPauseTimeRef) {
+            // Resume from pause - calculate and accumulate pause duration
+            const now = Date.now();
+            const pauseDuration = now - lastPauseTimeRef;
+            pausedTimeRef += pauseDuration;
+            lastPauseTimeRef = null;
+          } else {
+            // Fresh start
+            startTimeRef = Date.now();
+            pausedTimeRef = 0;
+            lastPauseTimeRef = null;
+            initialDurationRef = state.duration;
+          }
+
+          cleanup();
+          intervalRef = setInterval(updateTimer, 1000);
+          set({ isRunning: true, isPaused: false });
+        },
+
+        pauseSession: () => {
+          lastPauseTimeRef = Date.now();
+          cleanup();
+          // Keep the current duration value in state
+          set({ isRunning: false, isPaused: true });
+        },
+
+        reset: () => {
+          cleanup();
+          startTimeRef = null;
+          pausedTimeRef = 0;
+          backgroundTimeRef = null;
+          initialDurationRef = null;
+          lastPauseTimeRef = null;
+          set((state) => ({
             isRunning: false,
             isPaused: false,
-          });
-          return;
-        }
-
-        // Move to next step in flow
-        set({
-          currentFlowStep: nextStep,
-          sessionType: flow.steps[nextStep].type as SessionType, // Ensure type safety
-          duration: flow.steps[nextStep].duration,
-          isRunning: false,
-          isPaused: false,
-        });
-      },
-
-      // Update the current duration
-      setDuration: (durationOrUpdater) => {
-        if (typeof durationOrUpdater === "function") {
-          set((state) => ({
-            duration: durationOrUpdater(state.duration),
+            duration:
+              SESSION_TYPES[state.sessionType] || SESSION_TYPES["Classic"],
           }));
-        } else {
-          set({ duration: durationOrUpdater });
-        }
-      },
+        },
 
-      // Pause the current session
-      pauseSession: () => {
-        set({
-          isRunning: false,
-          isPaused: true,
-        });
-      },
+        // Start a predefined flow
+        startFlow: (flowId) => {
+          console.log("Starting flow:", flowId);
+          const flow = useFlowStore
+            .getState()
+            .customFlows.find((f) => f.id === flowId);
+          console.log("Flow data:", flow);
 
-      // Resume the current session
-      resumeSession: () =>
-        set((state) => ({
-          isRunning: true,
-          isPaused: false,
-          // Generate new sessionId if this is a new session (not resuming from pause)
-          sessionId: state.isPaused ? state.sessionId : Date.now().toString(),
-        })),
+          if (!flow || flow.steps.length === 0) {
+            console.log("Invalid or empty flow");
+            return;
+          }
 
-      // Reset to default state
-      reset: () =>
-        set({
-          sessionType: "Classic",
-          duration: SESSION_TYPES["Classic"],
-          isRunning: false,
-          isPaused: false,
-          currentFlowId: null,
-          currentFlowStep: 0,
-          sessionId: Date.now().toString(),
-        }),
+          const firstSession = flow.steps[0];
+          console.log("First session:", firstSession);
 
-      // Mark the current session as completed
-      completeSession: () =>
-        set((state) => {
-          // Record session in session intelligence
-          try {
-            const sessionIntelligence = useSessionIntelligence.getState();
-            sessionIntelligence.recordSession({
-              sessionType: state.sessionType,
-              duration: state.duration,
-              completed: true,
-              focusQuality: 7, // Default value, can be enhanced later
-              energyLevel: 7, // Default value, can be enhanced later
-              interruptions: 0, // Default value, can be enhanced later
+          // Clear any existing intervals
+          if (get().isRunning) {
+            console.log("Stopping current session");
+            set({
+              isRunning: false,
+              isPaused: false,
             });
-          } catch (error) {
-            console.log("Error recording session in intelligence:", error);
           }
 
-          console.log("completeSession called with state:", {
-            currentFlowId: state.currentFlowId,
-            currentFlowStep: state.currentFlowStep,
-            sessionType: state.sessionType,
-            duration: state.duration,
-          });
-          const today = new Date().toISOString().split("T")[0];
-          const yesterday = new Date();
-          yesterday.setDate(yesterday.getDate() - 1);
-          const yesterdayStr = yesterday.toISOString().split("T")[0];
-
-          // Track Pomodoro completion for work sessions
-          let completedPomodoros = state.completedPomodoros;
-          let newSessionType = state.sessionType;
-          let newDuration = state.duration;
-          let newFlowId = state.currentFlowId;
-          let newFlowStep = state.currentFlowStep;
-          let shouldStartNextSession = false;
-
-          // Check if this was a work session (Classic or Deep Focus)
-          if (["Classic", "Deep Focus"].includes(state.sessionType)) {
-            completedPomodoros += 1;
-          }
-
-          // Calculate streak if this is the first session of the day
-          let newStreak = state.currentStreak;
-          let shouldUpdateStreak = false;
-
-          // If this is the first session ever or we haven't had a session today
-          if (!state.lastSessionDate || state.lastSessionDate !== today) {
-            shouldUpdateStreak = true;
-
-            // If this is the first session ever
-            if (!state.lastSessionDate) {
-              newStreak = 1;
-            }
-            // If we've had a session before and it's a new day
-            else if (state.lastSessionDate !== today) {
-              // If we had a session yesterday, increment the streak
-              if (state.lastSessionDate === yesterdayStr) {
-                newStreak = state.currentStreak + 1;
-              }
-              // If we missed one day, keep the current streak (allow one day of leeway)
-              else if (state.lastSessionDate < yesterdayStr) {
-                const twoDaysAgo = new Date();
-                twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-                const twoDaysAgoStr = twoDaysAgo.toISOString().split("T")[0];
-                newStreak =
-                  state.lastSessionDate >= twoDaysAgoStr
-                    ? state.currentStreak
-                    : 1;
-              }
-            }
-          }
-
-          // Handle flow logic first
-          if (state.currentFlowId) {
-            const flow = useFlowStore
-              .getState()
-              .customFlows.find((f) => f.id === state.currentFlowId);
-            const nextStep = state.currentFlowStep + 1;
-
-            console.log("Flow completion logic:", {
-              flowId: state.currentFlowId,
-              flow: flow,
-              currentStep: state.currentFlowStep,
-              nextStep: nextStep,
-              totalSteps: flow?.steps.length,
-            });
-
-            if (nextStep < flow?.steps.length) {
-              // Update the session data for the next step
-              newFlowStep = nextStep;
-              newSessionType = flow.steps[nextStep].type as SessionType;
-              newDuration = flow.steps[nextStep].duration;
-
-              // Show flow completion modal instead of auto-starting
-              return {
-                ...state,
-                sessionType: newSessionType,
-                duration: newDuration,
-                currentFlowId: state.currentFlowId,
-                currentFlowStep: newFlowStep,
-                isRunning: false, // Don't auto-start
-                isPaused: false,
-                completedPomodoros,
-                lastSessionDate: today,
-                completedSessions: state.completedSessions + 1,
-                sessionId: Date.now().toString(),
-                showFlowCompletionModal: true,
-                flowCompletionData: {
-                  completedSessions: nextStep, // nextStep is the number of completed sessions (1-based)
-                  totalSessions: flow.steps.length,
-                  nextSessionType: flow.steps[nextStep].type,
-                  nextSessionDuration: flow.steps[nextStep].duration,
-                  currentFlowName: state.currentFlowId,
-                },
-                ...(shouldUpdateStreak && {
-                  currentStreak: newStreak,
-                  longestStreak: Math.max(state.longestStreak, newStreak),
-                }),
-              };
-            } else {
-              // End of flow - show completion modal for the last session
-              return {
-                ...state,
-                currentFlowId: null,
-                currentFlowStep: 0,
-                isRunning: false,
-                isPaused: false,
-                completedPomodoros,
-                lastSessionDate: today,
-                completedSessions: state.completedSessions + 1,
-                sessionId: Date.now().toString(),
-                showFlowCompletionModal: true,
-                flowCompletionData: {
-                  completedSessions: flow.steps.length,
-                  totalSessions: flow.steps.length,
-                  nextSessionType: "Flow Complete",
-                  nextSessionDuration: 0,
-                  currentFlowName: state.currentFlowId,
-                },
-                ...(shouldUpdateStreak && {
-                  currentStreak: newStreak,
-                  longestStreak: Math.max(state.longestStreak, newStreak),
-                }),
-              };
-            }
-          }
-
-          // Update the state for non-flow sessions
-          const update: Partial<SessionState> = {
-            sessionType: newSessionType,
-            duration: newDuration,
-            currentFlowId: newFlowId,
-            currentFlowStep: newFlowStep,
-            isRunning: shouldStartNextSession,
+          const newState = {
+            currentFlowId: flowId,
+            currentFlowStep: 0,
+            sessionType: firstSession.type as SessionType,
+            duration: firstSession.duration,
+            isRunning: false,
             isPaused: false,
-            completedPomodoros,
-            lastSessionDate: today,
-            completedSessions: state.completedSessions + 1,
             sessionId: Date.now().toString(),
           };
 
-          // Only update streak if needed
-          if (shouldUpdateStreak) {
-            update.currentStreak = newStreak;
-            update.longestStreak = Math.max(state.longestStreak, newStreak);
-          }
+          console.log("Setting new state:", newState);
+          set(newState);
+        },
 
-          return update;
-        }),
+        // Move to the next session in the current flow
+        nextSession: () => {
+          const { currentFlowId, currentFlowStep, sessionType } = get();
 
-      // Mark the current session as missed
-      missSession: () =>
-        set((state) => {
-          // Record failed session in session intelligence
-          try {
-            const sessionIntelligence = useSessionIntelligence.getState();
-            sessionIntelligence.recordSession({
-              sessionType: state.sessionType,
-              duration: state.duration,
-              completed: false,
-              focusQuality: 3, // Default value for failed sessions
-              energyLevel: 4, // Default value for failed sessions
-              interruptions: 2, // Default value for failed sessions
+          if (get().currentFlowStep > 0) {
+            // If we're in a flow but not at the first step, reset to the first step
+            return set({
+              ...get(),
+              isRunning: false,
+              isPaused: false,
+              currentFlowStep: 0,
+              duration: currentFlowId
+                ? useFlowStore
+                    .getState()
+                    .customFlows.find((f) => f.id === currentFlowId)?.steps[0]
+                    .duration
+                : SESSION_TYPES[sessionType],
             });
-          } catch (error) {
-            console.log(
-              "Error recording failed session in intelligence:",
-              error
-            );
           }
 
-          // Only increment if we haven't reached the total sessions
-          if (state.missedSessions >= state.totalSessions) {
-            return state; // No change if we've already missed all sessions
+          if (!currentFlowId) return; // No active flow
+
+          const flow = useFlowStore
+            .getState()
+            .customFlows.find((f) => f.id === currentFlowId);
+          const nextStep = currentFlowStep + 1;
+
+          if (!flow || nextStep >= flow?.steps.length) {
+            // End of flow
+            set({
+              currentFlowId: null,
+              currentFlowStep: 0,
+              isRunning: false,
+              isPaused: false,
+            });
+            return;
           }
 
-          const update: Partial<SessionState> = {
-            missedSessions: state.missedSessions + 1,
+          // Move to next step in flow
+          set({
+            currentFlowStep: nextStep,
+            sessionType: flow.steps[nextStep].type as SessionType, // Ensure type safety
+            duration: flow.steps[nextStep].duration,
             isRunning: false,
             isPaused: false,
-            // Reset flow if a session is missed
-            currentFlowId: null,
-            currentFlowStep: 0,
-          };
+          });
+        },
 
-          // If we were in a flow, reset to the first session type
-          if (state.currentFlowId) {
-            const flow = useFlowStore
-              .getState()
-              .customFlows.find((f) => f.id === state.currentFlowId);
-            update.sessionType = flow?.steps[0].type as SessionType; // Ensure type safety
-            update.duration = flow?.steps[0].duration;
+        // Update the current duration
+        setDuration: (durationOrUpdater) => {
+          if (typeof durationOrUpdater === "function") {
+            set((state) => {
+              const newDuration = durationOrUpdater(state.duration);
+              initialDurationRef = newDuration;
+              return { duration: newDuration };
+            });
+          } else {
+            initialDurationRef = durationOrUpdater;
+            set({ duration: durationOrUpdater });
           }
+        },
 
-          return {
-            ...state,
-            ...update,
-          };
-        }),
+        // Mark the current session as completed
+        completeSession: () =>
+          set((state) => {
+            // Record session in session intelligence
+            try {
+              const sessionIntelligence = useSessionIntelligence.getState();
+              sessionIntelligence.recordSession({
+                sessionType: state.sessionType,
+                duration: state.duration,
+                completed: true,
+                focusQuality: 7, // Default value, can be enhanced later
+                energyLevel: 7, // Default value, can be enhanced later
+                interruptions: 0, // Default value, can be enhanced later
+              });
+            } catch (error) {
+              console.log("Error recording session in intelligence:", error);
+            }
 
-      // Reset all progress and statistics
-      resetProgress: () =>
-        set({
-          sessionType: "Classic",
-          duration: SESSION_TYPES["Classic"],
-          isRunning: false,
-          isPaused: false,
-          currentFlowId: null,
-          currentFlowStep: 0,
-          completedPomodoros: 0,
-          completedSessions: 0,
-          missedSessions: 0,
-          currentStreak: 0,
-          lastSessionDate: null,
-          // Keep longest streak as it's an all-time record
-        }),
-      checkAndResetStreak: () =>
-        set((state) => {
-          if (!state.lastSessionDate) return state;
+            console.log("completeSession called with state:", {
+              currentFlowId: state.currentFlowId,
+              currentFlowStep: state.currentFlowStep,
+              sessionType: state.sessionType,
+              duration: state.duration,
+            });
+            const today = new Date().toISOString().split("T")[0];
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            const yesterdayStr = yesterday.toISOString().split("T")[0];
 
-          const lastSession = new Date(state.lastSessionDate);
-          const today = new Date();
+            // Track Pomodoro completion for work sessions
+            let completedPomodoros = state.completedPomodoros;
+            let newSessionType = "Classic"; // Default to Classic for non-flow sessions
+            let newDuration = SESSION_TYPES["Classic"]; // Default to Classic duration
+            let newFlowStep = state.currentFlowStep;
 
-          // Reset time parts for accurate day comparison
-          lastSession.setHours(0, 0, 0, 0);
-          const todayReset = new Date(today);
-          todayReset.setHours(0, 0, 0, 0);
 
-          const dayDifference = Math.floor(
-            (todayReset.getTime() - lastSession.getTime()) /
-              (1000 * 60 * 60 * 24)
-          );
+            // Check if this was a work session (Classic or Deep Focus)
+            if (["Classic", "Deep Focus"].includes(state.sessionType)) {
+              completedPomodoros += 1;
+            }
 
-          // If it's been more than 1 day since the last session, reset the streak
-          if (dayDifference > 1) {
+            // Calculate streak if this is the first session of the day
+            let newStreak = state.currentStreak;
+            let shouldUpdateStreak = false;
+
+            // If this is the first session ever or we haven't had a session today
+            if (!state.lastSessionDate || state.lastSessionDate !== today) {
+              shouldUpdateStreak = true;
+
+              // If this is the first session ever
+              if (!state.lastSessionDate) {
+                newStreak = 1;
+              }
+              // If we've had a session before and it's a new day
+              else if (state.lastSessionDate !== today) {
+                // If we had a session yesterday, increment the streak
+                if (state.lastSessionDate === yesterdayStr) {
+                  newStreak = state.currentStreak + 1;
+                }
+                // If we missed one day, keep the current streak (allow one day of leeway)
+                else if (state.lastSessionDate < yesterdayStr) {
+                  const twoDaysAgo = new Date();
+                  twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+                  const twoDaysAgoStr = twoDaysAgo.toISOString().split("T")[0];
+                  newStreak =
+                    state.lastSessionDate >= twoDaysAgoStr
+                      ? state.currentStreak
+                      : 1;
+                }
+              }
+            }
+
+            // Handle flow logic first
+            if (state.currentFlowId) {
+              const flow = useFlowStore
+                .getState()
+                .customFlows.find((f) => f.id === state.currentFlowId);
+              const nextStep = state.currentFlowStep + 1;
+
+              console.log("Flow completion logic:", {
+                flowId: state.currentFlowId,
+                flow: flow,
+                currentStep: state.currentFlowStep,
+                nextStep: nextStep,
+                totalSteps: flow?.steps.length,
+              });
+
+              if (flow && nextStep < flow.steps.length) {
+                // Update the session data for the next step
+                newFlowStep = nextStep;
+                newSessionType = flow.steps[nextStep].type as SessionType;
+                newDuration = flow.steps[nextStep].duration;
+
+                // Show flow completion modal instead of auto-starting
+                return {
+                  ...state,
+                  sessionType: newSessionType as SessionType,
+                  duration: newDuration,
+                  currentFlowId: state.currentFlowId,
+                  currentFlowStep: newFlowStep,
+                  isRunning: false, // Don't auto-start
+                  isPaused: false,
+                  completedPomodoros,
+                  lastSessionDate: today,
+                  completedSessions: state.completedSessions + 1,
+                  sessionId: Date.now().toString(),
+                  showFlowCompletionModal: true,
+                  flowCompletionData: {
+                    completedSessions: nextStep,
+                    totalSessions: flow.steps.length,
+                    nextSessionType: flow.steps[nextStep].type,
+                    nextSessionDuration: flow.steps[nextStep].duration,
+                    currentFlowName: state.currentFlowId,
+                  },
+                  ...(shouldUpdateStreak && {
+                    currentStreak: newStreak,
+                    longestStreak: Math.max(state.longestStreak, newStreak),
+                  }),
+                };
+              } else {
+                // End of flow - reset to Classic session
+                cleanup();
+                startTimeRef = null;
+                pausedTimeRef = 0;
+                lastPauseTimeRef = null;
+                initialDurationRef = SESSION_TYPES["Classic"];
+
+                return {
+                  ...state,
+                  currentFlowId: null,
+                  currentFlowStep: 0,
+                  isRunning: false,
+                  isPaused: false,
+                  sessionType: "Classic" as SessionType,
+                  duration: SESSION_TYPES["Classic"],
+                  completedPomodoros,
+                  lastSessionDate: today,
+                  completedSessions: state.completedSessions + 1,
+                  sessionId: Date.now().toString(),
+                  showFlowCompletionModal: true,
+                  flowCompletionData: {
+                    completedSessions: flow ? flow.steps.length : 0,
+                    totalSessions: flow ? flow.steps.length : 0,
+                    nextSessionType: "Flow Complete",
+                    nextSessionDuration: 0,
+                    currentFlowName: state.currentFlowId,
+                  },
+                  ...(shouldUpdateStreak && {
+                    currentStreak: newStreak,
+                    longestStreak: Math.max(state.longestStreak, newStreak),
+                  }),
+                };
+              }
+            }
+
+            // For non-flow sessions, reset to Classic
+            cleanup();
+            startTimeRef = null;
+            pausedTimeRef = 0;
+            lastPauseTimeRef = null;
+            initialDurationRef = SESSION_TYPES["Classic"];
+
+            // Update the state for non-flow sessions
+            const update: Partial<SessionState> = {
+              sessionType: "Classic" as SessionType,
+              duration: SESSION_TYPES["Classic"],
+              currentFlowId: null,
+              currentFlowStep: 0,
+              isRunning: false,
+              isPaused: false,
+              completedPomodoros,
+              lastSessionDate: today,
+              completedSessions: state.completedSessions + 1,
+              sessionId: Date.now().toString(),
+            };
+
+            // Only update streak if needed
+            if (shouldUpdateStreak) {
+              update.currentStreak = newStreak;
+              update.longestStreak = Math.max(state.longestStreak, newStreak);
+            }
+
+            return update;
+          }),
+
+        // Mark the current session as missed
+        missSession: () =>
+          set((state) => {
+            // Record failed session in session intelligence
+            try {
+              const sessionIntelligence = useSessionIntelligence.getState();
+              sessionIntelligence.recordSession({
+                sessionType: state.sessionType,
+                duration: state.duration,
+                completed: false,
+                focusQuality: 3, // Default value for failed sessions
+                energyLevel: 4, // Default value for failed sessions
+                interruptions: 2, // Default value for failed sessions
+              });
+            } catch (error) {
+              console.log(
+                "Error recording failed session in intelligence:",
+                error
+              );
+            }
+
+            // Only increment if we haven't reached the total sessions
+            if (state.missedSessions >= state.totalSessions) {
+              return state; // No change if we've already missed all sessions
+            }
+
+            const update: Partial<SessionState> = {
+              missedSessions: state.missedSessions + 1,
+              isRunning: false,
+              isPaused: false,
+              // Reset flow if a session is missed
+              currentFlowId: null,
+              currentFlowStep: 0,
+            };
+
+            // If we were in a flow, reset to the first session type
+            if (state.currentFlowId) {
+              const flow = useFlowStore
+                .getState()
+                .customFlows.find((f) => f.id === state.currentFlowId);
+              update.sessionType = flow?.steps[0].type as SessionType; // Ensure type safety
+              update.duration = flow?.steps[0].duration;
+            }
+
             return {
               ...state,
-              currentStreak: 0,
-              lastSessionDate: todayReset.toISOString().split("T")[0],
+              ...update,
             };
-          }
-          return state;
-        }),
+          }),
 
-      // Flow completion actions
-      continueFlow: () =>
-        set((state) => {
-          // Ensure we have the correct session data for the current flow step
-          if (state.currentFlowId) {
-            const flow = useFlowStore
-              .getState()
-              .customFlows.find((f) => f.id === state.currentFlowId);
+        // Reset all progress and statistics
+        resetProgress: () =>
+          set({
+            sessionType: "Classic",
+            duration: SESSION_TYPES["Classic"],
+            isRunning: false,
+            isPaused: false,
+            currentFlowId: null,
+            currentFlowStep: 0,
+            completedPomodoros: 0,
+            completedSessions: 0,
+            missedSessions: 0,
+            currentStreak: 0,
+            lastSessionDate: null,
+            // Keep longest streak as it's an all-time record
+          }),
+        checkAndResetStreak: () =>
+          set((state) => {
+            if (!state.lastSessionDate) return state;
 
-            if (flow && state.currentFlowStep < flow.steps.length) {
-              const currentStep = flow.steps[state.currentFlowStep];
+            const lastSession = new Date(state.lastSessionDate);
+            const today = new Date();
+
+            // Reset time parts for accurate day comparison
+            lastSession.setHours(0, 0, 0, 0);
+            const todayReset = new Date(today);
+            todayReset.setHours(0, 0, 0, 0);
+
+            const dayDifference = Math.floor(
+              (todayReset.getTime() - lastSession.getTime()) /
+                (1000 * 60 * 60 * 24)
+            );
+
+            // If it's been more than 1 day since the last session, reset the streak
+            if (dayDifference > 1) {
               return {
                 ...state,
-                sessionType: currentStep.type as SessionType,
-                duration: currentStep.duration,
-                isRunning: true,
-                isPaused: false,
-                showFlowCompletionModal: false,
-                flowCompletionData: null,
-                sessionId: Date.now().toString(),
+                currentStreak: 0,
+                lastSessionDate: todayReset.toISOString().split("T")[0],
               };
             }
-          }
+            return state;
+          }),
 
-          // Fallback for non-flow sessions
-          return {
+        // Flow completion actions
+        continueFlow: () =>
+          set((state) => {
+            // Ensure we have the correct session data for the current flow step
+            if (state.currentFlowId) {
+              const flow = useFlowStore
+                .getState()
+                .customFlows.find((f) => f.id === state.currentFlowId);
+
+              if (flow && state.currentFlowStep < flow.steps.length) {
+                const currentStep = flow.steps[state.currentFlowStep];
+
+                // Initialize timer state
+                startTimeRef = Date.now();
+                pausedTimeRef = 0;
+                lastPauseTimeRef = null;
+                initialDurationRef = currentStep.duration;
+                cleanup();
+                intervalRef = setInterval(updateTimer, 1000);
+
+                return {
+                  ...state,
+                  sessionType: currentStep.type as SessionType,
+                  duration: currentStep.duration,
+                  isRunning: true,
+                  isPaused: false,
+                  showFlowCompletionModal: false,
+                  flowCompletionData: null,
+                  sessionId: Date.now().toString(),
+                };
+              }
+            }
+
+            // Fallback for non-flow sessions
+            // Initialize timer state for fallback
+            startTimeRef = Date.now();
+            pausedTimeRef = 0;
+            lastPauseTimeRef = null;
+            initialDurationRef = state.duration;
+            cleanup();
+            intervalRef = setInterval(updateTimer, 1000);
+
+            return {
+              ...state,
+              isRunning: true,
+              isPaused: false,
+              showFlowCompletionModal: false,
+              flowCompletionData: null,
+              sessionId: Date.now().toString(),
+            };
+          }),
+
+        pauseFlow: () => {
+          // Clean up timer state
+          lastPauseTimeRef = Date.now();
+          cleanup();
+
+          set((state) => ({
             ...state,
-            isRunning: true,
+            isRunning: false,
+            isPaused: true,
+            showFlowCompletionModal: false,
+            flowCompletionData: null,
+          }));
+        },
+
+        endFlow: () => {
+          // Clean up timer state
+          cleanup();
+          startTimeRef = null;
+          pausedTimeRef = 0;
+          lastPauseTimeRef = null;
+          initialDurationRef = SESSION_TYPES["Classic"];
+
+          set((state) => ({
+            ...state,
+            currentFlowId: null,
+            currentFlowStep: 0,
+            isRunning: false,
             isPaused: false,
             showFlowCompletionModal: false,
             flowCompletionData: null,
-            sessionId: Date.now().toString(),
-          };
-        }),
+            sessionType: "Classic",
+            duration: SESSION_TYPES["Classic"],
+          }));
+        },
 
-      pauseFlow: () =>
-        set((state) => ({
-          ...state,
-          isRunning: false,
-          isPaused: true,
-          showFlowCompletionModal: false,
-          flowCompletionData: null,
-        })),
-
-      endFlow: () =>
-        set((state) => ({
-          ...state,
-          currentFlowId: null,
-          currentFlowStep: 0,
-          isRunning: false,
-          isPaused: false,
-          showFlowCompletionModal: false,
-          flowCompletionData: null,
-          sessionType: "Classic",
-          duration: SESSION_TYPES["Classic"],
-        })),
-
-      hideFlowCompletionModal: () =>
-        set((state) => ({
-          ...state,
-          showFlowCompletionModal: false,
-          flowCompletionData: null,
-        })),
-    }),
+        hideFlowCompletionModal: () =>
+          set((state) => ({
+            ...state,
+            showFlowCompletionModal: false,
+            flowCompletionData: null,
+          })),
+      };
+    },
     {
       name: "session-store",
       storage: {
-        getItem: async (key) => {
-          const value = await AsyncStorage.getItem(key);
+        getItem: async (name) => {
+          const value = await AsyncStorage.getItem(name);
           return value ? JSON.parse(value) : null;
         },
-        setItem: async (key, value) => {
-          await AsyncStorage.setItem(key, JSON.stringify(value));
+        setItem: async (name, value) => {
+          await AsyncStorage.setItem(name, JSON.stringify(value));
         },
-        removeItem: async (key) => {
-          await AsyncStorage.removeItem(key);
+        removeItem: async (name) => {
+          await AsyncStorage.removeItem(name);
         },
       },
     }

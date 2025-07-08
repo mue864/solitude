@@ -30,11 +30,7 @@ import { FlowDetailsModal, FlowIndicator } from "@/components/FlowIndicator";
 import FlowsModal from "@/components/modals/FlowsModal";
 import SessionIndicator from "@/components/SessionIndicator";
 import { useFlowStore } from "@/store/flowStore";
-import {
-  SESSION_TYPES,
-  useSessionStore,
-  type SessionType,
-} from "@/store/sessionState";
+import { useSessionStore, type SessionType } from "@/store/sessionState";
 
 export default function Focus() {
   const router = useRouter();
@@ -75,8 +71,6 @@ export default function Focus() {
     duration,
     isRunning,
     isPaused,
-    setDuration,
-    completeSession,
     currentStreak,
     sessionType,
     setSessionType,
@@ -84,14 +78,11 @@ export default function Focus() {
     currentFlowId,
     currentFlowStep,
     resumeSession,
+    pauseSession,
+    reset,
     showFlowCompletionModal,
     flowCompletionData,
-    hideFlowCompletionModal,
-    // completedPomodoros is available but not currently used
   } = useSessionStore();
-
-  // Timer reference
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Calculate duration in minutes
   const durationMinutes = Math.floor(duration / 60);
@@ -180,115 +171,6 @@ export default function Focus() {
 
   // Flow details modal state
   const [showFlowDetails, setShowFlowDetails] = useState(false);
-
-  // Debug logs
-  console.log("Current flow:", currentFlowId);
-  console.log("Current flow step:", currentFlowStep);
-  console.log("Session type:", sessionType);
-  console.log("Flow completion modal:", {
-    showFlowCompletionModal,
-    flowCompletionData,
-  });
-
-  // Test function to manually trigger flow completion modal
-  const testFlowCompletion = () => {
-    console.log("Testing flow completion modal");
-    useSessionStore.setState({
-      showFlowCompletionModal: true,
-      flowCompletionData: {
-        completedSessions: 1,
-        totalSessions: 4,
-        nextSessionType: "Short Break",
-        nextSessionDuration: 5 * 60,
-        currentFlowName: "Test Flow",
-      },
-    });
-  };
-
-  // Handle timer countdown
-  useEffect(() => {
-    console.log("Timer effect triggered:", {
-      isRunning,
-      isPaused,
-      currentFlowId,
-      currentFlowStep,
-      showFlowCompletionModal,
-      duration,
-    });
-
-    // Clear any existing interval when component unmounts or dependencies change
-    const cleanup = () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    };
-
-    // Only run the timer if running and not paused
-    if (isRunning && !isPaused) {
-      console.log("Starting timer with duration:", duration);
-      cleanup(); // Clear any existing timer to prevent duplicates
-
-      timerRef.current = setInterval(() => {
-        setDuration((currentDuration: number) => {
-          // If we reach 0 or below, end the session
-          if (currentDuration <= 1) {
-            console.log("Timer reached 0, completing session");
-            cleanup();
-            // Use setTimeout to allow state to update before starting next session
-            setTimeout(() => {
-              completeSession();
-            }, 0);
-            return 0;
-          }
-          // Otherwise, just decrement the timer
-          return currentDuration - 1;
-        });
-      }, 1000);
-
-      // Clear the timer when paused or stopped
-      return cleanup;
-    } else if (isPaused) {
-      // Clear any running timers when paused
-      cleanup();
-      return;
-    } else if (
-      !isRunning &&
-      currentFlowId &&
-      !showFlowCompletionModal &&
-      duration > 0
-    ) {
-      // Auto-start the first session in a flow when it's initially selected
-      // This only happens when we're not paused and the modal isn't visible
-      console.log(
-        "Auto-starting initial flow session with duration:",
-        duration
-      );
-      const timerId = setTimeout(() => {
-        resumeSession();
-      }, 100);
-
-      return () => clearTimeout(timerId);
-    }
-  }, [
-    isRunning,
-    isPaused,
-    setDuration,
-    completeSession,
-    currentFlowId,
-    currentFlowStep,
-    resumeSession,
-    showFlowCompletionModal,
-    duration, // Add duration as dependency to ensure timer restarts when duration changes
-  ]);
-
-  // Update duration when session type changes - only when not running and not paused
-  useEffect(() => {
-    if (!isRunning && !isPaused && !currentFlowId) {
-      // Only update duration if not in a flow (flows manage their own durations)
-      setDuration(SESSION_TYPES[sessionType] || 25 * 60);
-    }
-  }, [sessionType, isRunning, isPaused, setDuration, currentFlowId]);
 
   // Format time as MM:SS
   const formatTime = (seconds: number) => {
@@ -487,7 +369,9 @@ export default function Focus() {
         ]),
       ]).start();
     } else {
-      // Add Task: slide back up to original position, then TodayProgress: fade/scale/slide in
+      // Add Task: slide back up to original position, then TodayProgress: fade/scale/slide in (slide up from below)
+      todayProgressTranslateY.setValue(40); // Start 40px below
+      todayProgressAnim.setValue(0); // Start fully transparent/hidden
       Animated.sequence([
         Animated.parallel([
           Animated.spring(addTaskTranslateY, {
@@ -496,20 +380,21 @@ export default function Focus() {
           }),
           Animated.timing(addTaskOpacity, {
             toValue: 1,
-            duration: 220,
+            duration: 180,
             useNativeDriver: true,
           }),
         ]),
         Animated.parallel([
           Animated.timing(todayProgressAnim, {
             toValue: 1,
-            duration: 300,
+            duration: 180,
             easing: Easing.out(Easing.cubic),
             useNativeDriver: true,
           }),
           Animated.timing(todayProgressTranslateY, {
             toValue: 0,
-            duration: 300,
+            duration: 180,
+            easing: Easing.out(Easing.cubic),
             useNativeDriver: true,
           }),
         ]),
@@ -740,19 +625,12 @@ export default function Focus() {
               {/* Start/Pause Button */}
               <View className="w-full items-center">
                 <View className="w-32">
-                  <StartSessionBtn />
+                  <StartSessionBtn
+                    onStart={resumeSession}
+                    onPause={pauseSession}
+                    onReset={reset}
+                  />
                 </View>
-                {/* Test button for flow completion modal */}
-                {currentFlowId && (
-                  <TouchableOpacity
-                    onPress={testFlowCompletion}
-                    className="mt-4 bg-red-500 px-4 py-2 rounded-lg"
-                  >
-                    <Text className="text-white font-semibold">
-                      Test Flow Modal
-                    </Text>
-                  </TouchableOpacity>
-                )}
               </View>
 
               {/* Add Task Button */}
