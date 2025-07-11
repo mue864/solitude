@@ -61,7 +61,7 @@ function TabNavigator() {
       >
         <Tabs.Screen name="focus" options={{ tabBarLabel: "Focus" }} />
         <Tabs.Screen name="plan" options={{ tabBarLabel: "Plan" }} />
-        <Tabs.Screen name="reflect" options={{ tabBarLabel: "Journal" }} />
+        <Tabs.Screen name="journal" options={{ tabBarLabel: "Journal" }} />
         <Tabs.Screen name="insights" options={{ tabBarLabel: "Insights" }} />
         <Tabs.Screen name="settings" options={{ tabBarLabel: "Settings" }} />
       </Tabs>

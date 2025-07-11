@@ -111,7 +111,7 @@ export default function SessionIndicator({
             Session
           </Text>
         </View>
-        <Ionicons name="chevron-right" size={16} color="#6B7280" />
+        <Ionicons name="chevron-forward" size={16} color="#6B7280" />
       </View>
     </TouchableOpacity>
   );

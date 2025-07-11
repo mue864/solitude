@@ -12,7 +12,7 @@ interface SessionIntelligenceModalProps {
 
 const SESSION_ICONS: Record<SessionType, string> = {
   Classic: "timer-outline",
-  "Deep Focus": "brain-outline",
+  "Deep Focus": "leaf",
   "Quick Task": "flash-outline",
   "Creative Time": "color-palette-outline",
   "Review Mode": "document-text-outline",
@@ -127,7 +127,10 @@ export default function SessionIntelligenceModal({
                     <View className="flex-row items-center gap-1">
                       <View className="w-2 h-2 rounded-full bg-green-500" />
                       <Text className="text-text-secondary text-sm">
-                        {stats.successRate.toFixed(0)}% success
+                        {stats.successRate != null
+                          ? stats.successRate.toFixed(0)
+                          : "0"}{" "}
+                        % success
                       </Text>
                     </View>
                     <View className="flex-row items-center gap-1">
@@ -139,7 +142,9 @@ export default function SessionIntelligenceModal({
                     <View className="flex-row items-center gap-1">
                       <View className="w-2 h-2 rounded-full bg-purple-500" />
                       <Text className="text-text-secondary text-sm">
-                        {stats.avgFocus.toFixed(1)}/10 focus
+                        {stats.avgFocus != null
+                          ? stats.avgFocus.toFixed(1)
+                          : "0.0"}/10 focus
                       </Text>
                     </View>
                   </View>
@@ -215,7 +220,9 @@ export default function SessionIntelligenceModal({
                       Productivity Score
                     </Text>
                     <Text className="text-white text-2xl font-SoraBold">
-                      {insights.productivityScore.toFixed(0)}/100
+                      {insights.productivityScore != null
+                        ? insights.productivityScore.toFixed(0)
+                        : "0"}/100
                     </Text>
                   </View>
                   <View className="flex-row items-center gap-4">
@@ -318,7 +325,7 @@ export default function SessionIntelligenceModal({
               {/* Weekly Insights */}
               <View className="mb-6">
                 <Text className="text-text-primary text-lg font-SoraSemiBold mb-3">
-                  This Week's Progress
+                  This Week&apos;s Progress
                 </Text>
                 <View className="bg-gray-50 dark:bg-gray-800 rounded-xl p-4">
                   <View className="flex-row justify-between items-center mb-3">
@@ -334,7 +341,10 @@ export default function SessionIntelligenceModal({
                     </View>
                     <Text className="text-text-primary font-SoraSemiBold">
                       {weeklyAnalytics.improvement > 0 ? "+" : ""}
-                      {weeklyAnalytics.improvement.toFixed(1)}%
+                      {weeklyAnalytics.improvement != null
+                        ? weeklyAnalytics.improvement.toFixed(1)
+                        : "0.0"}
+                      %
                     </Text>
                   </View>
                   <View className="flex-row justify-between">
@@ -348,7 +358,9 @@ export default function SessionIntelligenceModal({
                     </View>
                     <View className="items-center">
                       <Text className="text-text-primary text-lg font-SoraBold">
-                        {weeklyAnalytics.averageFocusQuality.toFixed(1)}
+                        {weeklyAnalytics.averageFocusQuality != null
+                          ? weeklyAnalytics.averageFocusQuality.toFixed(1)
+                          : "0.0"}
                       </Text>
                       <Text className="text-text-secondary text-xs">
                         Avg Focus
