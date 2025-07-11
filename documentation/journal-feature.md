@@ -63,12 +63,14 @@ type JournalEntry = {
 - **Floating Action Menu**: Quick access to add new content blocks
 - **Real-time Preview**: Live updates as users type
 - **Drag-to-Delete**: Remove blocks with confirmation
+- **Drag & Drop Reordering**: Intuitive block reordering with visual feedback
 
 #### Technical Features
 
 - **Performance Optimized**: Memoized components, efficient re-renders
 - **Platform Adaptive**: iOS/Android specific keyboard behavior
 - **Accessibility**: Proper focus management and screen reader support
+- **Gesture Handling**: Smooth drag animations with Reanimated
 
 ### 3. Journal Page (`app/(main)/journal.tsx`)
 
@@ -137,6 +139,138 @@ type JournalEntry = {
   - Waveform visualization during recording
   - Delete functionality
 - **Use Cases**: Voice notes, interviews, thoughts, reminders
+
+## Drag & Drop Implementation
+
+### Overview
+
+The journal editor features intuitive drag and drop functionality for reordering content blocks, built with React Native Reanimated and Gesture Handler for smooth, native performance.
+
+### Components
+
+#### DraggableBlock (`components/DraggableBlock.tsx`)
+
+**Purpose**: Wrapper component that adds drag functionality to any journal block.
+
+**Key Features**:
+
+- **Long Press Activation**: Drag handles appear only when long pressing (500ms)
+- **Gesture Recognition**: Combined long press and pan gesture handling
+- **Visual Feedback**: Scale, opacity, and shadow animations during drag
+- **Drag Handle**: Blue circular handle with menu icon (⋮⋮) in top-right corner
+- **Smooth Animations**: 60fps animations using Reanimated worklets
+- **Drop Zone Calculation**: Automatic position calculation for reordering
+- **User Guidance**: Brief hint tooltip for first-time users
+
+**Technical Implementation**:
+
+```typescript
+// Combined gesture handling
+const longPressGesture = Gesture.LongPress()
+  .minDuration(500)
+  .onStart(() => {
+    "worklet";
+    runOnJS(setShowDragHandle)(true);
+    dragHandleOpacity.value = withTiming(1, { duration: 200 });
+  });
+
+const panGesture = Gesture.Pan()
+  .onStart(() => {
+    "worklet";
+    runOnJS(onDragStart)(index);
+    zIndex.value = 1000;
+    scale.value = withSpring(1.05);
+    opacity.value = withSpring(0.8);
+  })
+  .onUpdate((event) => {
+    "worklet";
+    translateY.value = event.translationY;
+  })
+  .onEnd((event) => {
+    "worklet";
+    const targetIndex = Math.round(event.translationY / blockHeight) + index;
+    // Handle reordering logic
+  });
+
+const composedGesture = Gesture.Race(longPressGesture, panGesture);
+```
+
+### User Experience
+
+#### Visual Feedback
+
+- **During Drag**:
+  - Block scales to 1.05x with spring animation
+  - Opacity reduces to 0.8 for depth effect
+  - Dynamic shadow with interpolated values
+  - Z-index elevation to appear above other content
+- **Drag Handle**:
+  - Visible menu icon (⋮⋮) in top-left corner
+  - Subtle background for better visibility
+  - Consistent positioning across all block types
+
+#### Interaction Patterns
+
+- **Activation**: Long press (500ms) on any block to reveal drag handle
+- **Visual Hint**: Brief tooltip appears on first block to guide new users
+- **Drag Handle**: Blue circular button appears in top-right corner
+- **Movement**: Smooth vertical dragging with real-time feedback
+- **Completion**: Automatic snap to nearest position
+- **Cleanup**: Drag handle disappears after drop or cancellation
+- **No Layout Shift**: Content remains in original position until drag starts
+
+### Technical Architecture
+
+#### State Management
+
+```typescript
+const [isDragging, setIsDragging] = useState(false);
+const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+
+const handleReorder = useCallback(
+  (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex) return;
+
+    const newBlocks = [...blocks];
+    const [movedBlock] = newBlocks.splice(fromIndex, 1);
+    newBlocks.splice(toIndex, 0, movedBlock);
+
+    setBlocks(newBlocks);
+  },
+  [blocks]
+);
+```
+
+#### Performance Optimizations
+
+- **Worklet Functions**: All animations run on UI thread
+- **Memoized Handlers**: Callback optimization for re-render prevention
+- **Efficient Reordering**: Array manipulation with minimal state updates
+- **Gesture Optimization**: Proper gesture configuration for smooth interaction
+
+#### Integration Points
+
+- **Journal Editor**: Main integration point with block rendering
+- **State Persistence**: Automatic saving of reordered blocks
+- **Keyboard Handling**: Proper interaction with text inputs
+- **Accessibility**: Screen reader support for drag operations
+
+### Future Enhancements
+
+#### Planned Features
+
+- **Multi-Select Drag**: Select and move multiple blocks simultaneously
+- **Cross-Entry Drag**: Move blocks between different journal entries
+- **Drag Preview**: Custom preview during drag operation
+- **Haptic Feedback**: Tactile feedback for drag interactions
+- **Undo/Redo**: Support for drag operation history
+
+#### Technical Improvements
+
+- **Dynamic Heights**: Better handling of variable block heights
+- **Drop Zone Indicators**: Visual guides for valid drop areas
+- **Magnetic Snapping**: Enhanced positioning with magnetic guides
+- **Performance**: Further optimization for large numbers of blocks
 
 ## User Workflows
 

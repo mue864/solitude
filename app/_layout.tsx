@@ -9,6 +9,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect } from "react";
 import { StyleSheet, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Toast, { BaseToast, ErrorToast } from "react-native-toast-message";
 
@@ -48,62 +49,62 @@ export default function RootLayout() {
   }, [checkAndResetStreak]);
 
   return (
-    <View style={styles.container} onLayout={onLayoutRootView}>
-      <StatusBar style="dark" />
-      <View style={styles.background} />
-      <SafeAreaView className="flex-1">
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            ...TransitionPresets.SlideFromRightIOS,
-            gestureDirection: "horizontal",
-            contentStyle: styles.screenContent,
-          }}
-        >
-          <Stack.Screen
-            name="index"
-            options={{
-              contentStyle: [
-                styles.screenContent,
-                { backgroundColor: "transparent" },
-              ],
-            }}
-          />
-          <Stack.Screen
-            name="(main)"
-            options={{
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <View style={styles.container} onLayout={onLayoutRootView}>
+        <StatusBar style="dark" />
+        <View style={styles.background} />
+        <SafeAreaView className="flex-1">
+          <Stack
+            screenOptions={{
               headerShown: false,
+              ...TransitionPresets.SlideFromRightIOS,
+              gestureDirection: "horizontal",
               contentStyle: styles.screenContent,
             }}
+          >
+            <Stack.Screen
+              name="index"
+              options={{
+                contentStyle: [
+                  styles.screenContent,
+                  { backgroundColor: "transparent" },
+                ],
+              }}
+            />
+            <Stack.Screen
+              name="(main)"
+              options={{
+                headerShown: false,
+                contentStyle: styles.screenContent,
+              }}
+            />
+          </Stack>
+          <Toast
+            config={{
+              undoToast: ({ text1, props }) => (
+                <UndoToast
+                  text1={text1 ?? ""}
+                  onPress={props?.onPress ?? (() => {})}
+                />
+              ),
+              warningToast: ({ props }) => (
+                <WarningToast
+                  text1={props?.text1 ?? ""}
+                  text2={props?.text2}
+                  onPress={props?.onPress ?? (() => {})}
+                />
+              ),
+              reflectionSaveToast: ({ props }) => (
+                <ReflectionSaveToast text1={props?.text1 ?? ""} />
+              ),
+              // You can keep the default toasts if you want:
+              success: (props) => <BaseToast {...props} />,
+              error: (props) => <ErrorToast {...props} />,
+            }}
           />
-        </Stack>
-        <Toast
-          config={{
-            undoToast: ({ text1, props }) => (
-              <UndoToast
-                text1={text1 ?? ""}
-                onPress={props?.onPress ?? (() => {})}
-              />
-            ),
-            warningToast: ({ props }) => (
-              <WarningToast
-                text1={props?.text1 ?? ""}
-                text2={props?.text2}
-                onPress={props?.onPress ?? (() => {})}
-              />
-            ),
-            reflectionSaveToast: ({ props }) => (
-              <ReflectionSaveToast
-                text1={props?.text1 ?? ""}
-              />
-            ),
-            // You can keep the default toasts if you want:
-            success: (props) => <BaseToast {...props} />,
-            error: (props) => <ErrorToast {...props} />,
-          }}
-        />
-      </SafeAreaView>
-    </View>
+        </SafeAreaView>
+      </View>
+    </GestureHandlerRootView>
   );
 }
 

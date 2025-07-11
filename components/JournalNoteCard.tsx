@@ -47,4 +47,6 @@ const JournalNoteCard = React.memo(
   }
 );
 
+JournalNoteCard.displayName = "JournalNoteCard";
+
 export default JournalNoteCard;

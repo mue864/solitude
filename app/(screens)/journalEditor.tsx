@@ -25,6 +25,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import DraggableBlock from "../../components/DraggableBlock";
 import { JournalBlock, useJournalStore } from "../../store/journalStore";
 
 function createEmptyBlock(type: JournalBlock["type"]): JournalBlock {
@@ -537,8 +538,34 @@ export default function JournalEditor() {
   const [recordingIdx, setRecordingIdx] = useState<number | null>(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [unsavedChanges, setUnsavedChanges] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
   const menuAnimation = useRef(new Animated.Value(0)).current;
+
+  // Drag and drop handlers
+  const handleDragStart = useCallback((index: number) => {
+    setIsDragging(true);
+    setDraggedIndex(index);
+  }, []);
+
+  const handleDragEnd = useCallback(() => {
+    setIsDragging(false);
+    setDraggedIndex(null);
+  }, []);
+
+  const handleReorder = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      if (fromIndex === toIndex) return;
+
+      const newBlocks = [...blocks];
+      const [movedBlock] = newBlocks.splice(fromIndex, 1);
+      newBlocks.splice(toIndex, 0, movedBlock);
+
+      setBlocks(newBlocks);
+    },
+    [blocks]
+  );
 
   // Add this useEffect to properly track unsaved changes
   useEffect(() => {
@@ -676,13 +703,10 @@ export default function JournalEditor() {
   };
 
   const renderBlock = (block: JournalBlock, idx: number) => {
-    const blockContainer =
-      "bg-white dark:bg-gray-800 rounded-2xl p-4 mb-4 shadow-sm border border-gray-100 dark:border-gray-700";
-
     switch (block.type) {
       case "text":
         return (
-          <View key={idx} className={blockContainer}>
+          <View className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700">
             <TextInput
               className="text-base text-gray-800 dark:text-gray-200 leading-6"
               placeholder="Start writing..."
@@ -708,7 +732,7 @@ export default function JournalEditor() {
 
       case "checkbox":
         return (
-          <View key={idx} className={blockContainer}>
+          <View className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700">
             <TextInput
               className="text-base font-medium text-gray-800 dark:text-gray-200 mb-3 px-2 py-1 border-b border-gray-200 dark:border-gray-600"
               placeholder="Checklist title (optional)"
@@ -798,7 +822,7 @@ export default function JournalEditor() {
 
       case "list":
         return (
-          <View key={idx} className={blockContainer}>
+          <View className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700">
             <Text className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-3">
               List
             </Text>
@@ -847,7 +871,7 @@ export default function JournalEditor() {
 
       case "image":
         return (
-          <View key={idx} className={blockContainer}>
+          <View className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700">
             {block.uri ? (
               <Image
                 source={{ uri: block.uri }}
@@ -882,7 +906,7 @@ export default function JournalEditor() {
 
       default:
         return (
-          <View key={idx} className={blockContainer}>
+          <View className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700">
             <Text className="text-gray-500 dark:text-gray-400">
               Unknown block type
             </Text>
@@ -1011,19 +1035,20 @@ export default function JournalEditor() {
 
           {/* Blocks */}
           {blocks.map((block, idx) => (
-            <View key={idx} className="relative">
-              {renderBlock(block, idx)}
-              {blocks.length > 1 && (
-                <TouchableOpacity
-                  className="absolute top-2 right-2 w-8 h-8 bg-red-500 rounded-full items-center justify-center shadow-md z-10"
-                  onPress={() => handleRemoveBlock(idx)}
-                >
-                  <Text className="text-white font-bold text-sm">×</Text>
-                </TouchableOpacity>
-              )}
-            </View>
+            <DraggableBlock
+              key={idx}
+              index={idx}
+              onReorder={handleReorder}
+              isDragging={isDragging}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              blockHeight={200} // Approximate height, can be made dynamic
+              onDelete={() => handleRemoveBlock(idx)}
+              canDelete={blocks.length > 1}
+            >
+              <View className="relative">{renderBlock(block, idx)}</View>
+            </DraggableBlock>
           ))}
-
           <View style={{ height: 100 }} />
         </ScrollView>
       </KeyboardAvoidingView>
