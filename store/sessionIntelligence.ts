@@ -11,6 +11,7 @@ export interface SessionRecord {
   energyLevel?: number; // 1-10 rating
   interruptions?: number;
   timestamp: number;
+  flowId?: string | null; // NEW: flow association
 }
 
 export interface SessionPattern {
@@ -58,11 +59,20 @@ export interface WeeklyAnalytics {
   focusQualityTrend: string;
 }
 
+export interface FlowCompletionRecord {
+  flowId: string;
+  flowName: string;
+  steps: number;
+  completedAt: number;
+  success: boolean;
+}
+
 interface SessionIntelligenceState {
   // Data
   sessionRecords: SessionRecord[];
   patterns: Record<string, SessionPattern>;
   userStats: UserStats;
+  flowCompletions: FlowCompletionRecord[];
 
   // Actions
   recordSession: (session: Omit<SessionRecord, "id" | "timestamp">) => void;
@@ -72,6 +82,16 @@ interface SessionIntelligenceState {
   clearAllData: () => void;
   getSessionHistory: (limit?: number) => SessionRecord[];
   getSessionTypeStats: (sessionType: string) => SessionPattern | null;
+  recordFlowCompletion: (completion: FlowCompletionRecord) => void;
+  getMostCompletedFlows: (
+    topN?: number
+  ) => { flowId: string; flowName: string; count: number }[];
+  getFlowStreaks: () => { flowId: string; flowName: string; streak: number }[];
+  getFlowSuccessRates: () => {
+    flowId: string;
+    flowName: string;
+    successRate: number;
+  }[];
 }
 
 const calculateProductivityScore = (
@@ -248,6 +268,7 @@ export const useSessionIntelligence = create<SessionIntelligenceState>()(
         averageFocusQuality: 7.4,
         averageEnergyLevel: 6.4,
       },
+      flowCompletions: [],
 
       // Record a new session
       recordSession: (session) => {
@@ -544,6 +565,7 @@ export const useSessionIntelligence = create<SessionIntelligenceState>()(
             averageFocusQuality: 5,
             averageEnergyLevel: 5,
           },
+          flowCompletions: [],
         });
       },
 
@@ -557,6 +579,59 @@ export const useSessionIntelligence = create<SessionIntelligenceState>()(
       getSessionTypeStats: (sessionType: string) => {
         const state = get();
         return state.patterns[sessionType] || null;
+      },
+
+      recordFlowCompletion: (completion) => {
+        set((state) => ({
+          flowCompletions: [...state.flowCompletions, completion],
+        }));
+      },
+      getMostCompletedFlows: (topN = 3) => {
+        const completions = get().flowCompletions;
+        const counts: Record<string, { flowName: string; count: number }> = {};
+        completions.forEach((c) => {
+          if (!counts[c.flowId])
+            counts[c.flowId] = { flowName: c.flowName, count: 0 };
+          counts[c.flowId].count++;
+        });
+        return Object.entries(counts)
+          .map(([flowId, { flowName, count }]) => ({ flowId, flowName, count }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, topN);
+      },
+      getFlowStreaks: () => {
+        const completions = get().flowCompletions;
+        const streaks: Record<string, { flowName: string; streak: number }> =
+          {};
+        completions.forEach((c) => {
+          if (!streaks[c.flowId])
+            streaks[c.flowId] = { flowName: c.flowName, streak: 0 };
+          if (c.success) streaks[c.flowId].streak++;
+          else streaks[c.flowId].streak = 0;
+        });
+        return Object.entries(streaks).map(
+          ([flowId, { flowName, streak }]) => ({ flowId, flowName, streak })
+        );
+      },
+      getFlowSuccessRates: () => {
+        const completions = get().flowCompletions;
+        const stats: Record<
+          string,
+          { flowName: string; total: number; success: number }
+        > = {};
+        completions.forEach((c) => {
+          if (!stats[c.flowId])
+            stats[c.flowId] = { flowName: c.flowName, total: 0, success: 0 };
+          stats[c.flowId].total++;
+          if (c.success) stats[c.flowId].success++;
+        });
+        return Object.entries(stats).map(
+          ([flowId, { flowName, total, success }]) => ({
+            flowId,
+            flowName,
+            successRate: total > 0 ? (success / total) * 100 : 0,
+          })
+        );
       },
     }),
     {

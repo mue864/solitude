@@ -378,6 +378,7 @@ export const useSessionStore = create<SessionState>()(
                 focusQuality: 7, // Default value, can be enhanced later
                 energyLevel: 7, // Default value, can be enhanced later
                 interruptions: 0, // Default value, can be enhanced later
+                flowId: state.currentFlowId, // Pass flowId
               });
             } catch (error) {
               console.log("Error recording session in intelligence:", error);
@@ -491,6 +492,23 @@ export const useSessionStore = create<SessionState>()(
                 lastPauseTimeRef = null;
                 initialDurationRef = SESSION_TYPES["Classic"];
 
+                // Record flow completion in session intelligence
+                try {
+                  const sessionIntelligence = useSessionIntelligence.getState();
+                  sessionIntelligence.recordFlowCompletion({
+                    flowId: state.currentFlowId!,
+                    flowName: flow!.name,
+                    steps: flow!.steps.length,
+                    completedAt: Date.now(),
+                    success: true,
+                  });
+                } catch (error) {
+                  console.log(
+                    "Error recording flow completion in intelligence:",
+                    error
+                  );
+                }
+
                 return {
                   ...state,
                   currentFlowId: null,
@@ -562,6 +580,7 @@ export const useSessionStore = create<SessionState>()(
                 focusQuality: 3, // Default value for failed sessions
                 energyLevel: 4, // Default value for failed sessions
                 interruptions: 2, // Default value for failed sessions
+                flowId: state.currentFlowId, // Pass flowId
               });
             } catch (error) {
               console.log(
