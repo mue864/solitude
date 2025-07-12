@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import LottieView from "lottie-react-native";
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import {
   Animated,
   Dimensions,
@@ -10,12 +10,23 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { BarChart, LineChart, PieChart } from "react-native-chart-kit";
+import {
+  FocusQualityChart,
+  PieChartComponent,
+  WeeklyChart,
+} from "../../components/ChartComponents";
 import { useSessionIntelligence } from "../../store/sessionIntelligence";
 
 const { width: screenWidth } = Dimensions.get("window");
 const chartWidth = screenWidth - 80 + 20; // Add extra width to avoid clipping
 const miniChartWidth = screenWidth - 100; // For smaller embedded charts
+
+// Utility function to get date string for comparison
+const getDateString = (date: Date) => date.toDateString();
+
+// Utility function to get day name
+const getDayName = (date: Date) =>
+  date.toLocaleDateString("en-US", { weekday: "short" });
 
 export default function Insights() {
   const {
@@ -29,12 +40,25 @@ export default function Insights() {
     sessionRecords,
   } = useSessionIntelligence();
 
-  const productivity = getProductivityInsights();
-  const weekly = getWeeklyAnalytics();
-  const mostCompletedFlows = getMostCompletedFlows();
-  const flowStreaks = getFlowStreaks();
-  const flowSuccessRates = getFlowSuccessRates();
-  const recommendations = getRecommendations();
+  // Memoize all expensive calculations
+  const productivity = useMemo(
+    () => getProductivityInsights(),
+    [getProductivityInsights]
+  );
+  const weekly = useMemo(() => getWeeklyAnalytics(), [getWeeklyAnalytics]);
+  const mostCompletedFlows = useMemo(
+    () => getMostCompletedFlows(),
+    [getMostCompletedFlows]
+  );
+  const flowStreaks = useMemo(() => getFlowStreaks(), [getFlowStreaks]);
+  const flowSuccessRates = useMemo(
+    () => getFlowSuccessRates(),
+    [getFlowSuccessRates]
+  );
+  const recommendations = useMemo(
+    () => getRecommendations(),
+    [getRecommendations]
+  );
 
   // Animated progress bar for productivity score
   const progressAnim = useRef(new Animated.Value(0)).current;
@@ -47,7 +71,7 @@ export default function Insights() {
       easing: Easing.out(Easing.cubic),
       useNativeDriver: false,
     }).start();
-  }, [score]);
+  }, [score, progressAnim]);
 
   const progressWidth = progressAnim.interpolate({
     inputRange: [0, 100],
@@ -56,103 +80,65 @@ export default function Insights() {
 
   const showMilestone = score >= 90;
 
-  // Enhanced chart configurations
-  const chartConfig = {
-    backgroundColor: "#ffffff",
-    backgroundGradientFrom: "#ffffff",
-    backgroundGradientTo: "#ffffff",
-    decimalPlaces: 0,
-    color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
-    labelColor: (opacity = 1) => `rgba(55, 65, 81, ${opacity})`,
-    style: {
-      borderRadius: 12,
-    },
-    propsForDots: {
-      r: "5",
-      strokeWidth: "2",
-      stroke: "#3B82F6",
-    },
-    propsForBackgroundLines: {
-      strokeDasharray: "",
-      stroke: "#E5E7EB",
-      strokeWidth: 1,
-    },
-    propsForLabels: {
-      fontSize: 10,
-    },
-    paddingRight: 16,
-  };
+  // Memoized weekly data calculation
+  const weekData = useMemo(() => {
+    const now = new Date();
+    const weekDataArray = Array(7)
+      .fill(0)
+      .map((_, i) => {
+        const d = new Date(now);
+        d.setDate(now.getDate() - (6 - i));
+        const dayStr = getDayName(d);
+        const dateStr = getDateString(d);
 
-  const greenChartConfig = {
-    backgroundColor: "#ffffff",
-    backgroundGradientFrom: "#ffffff",
-    backgroundGradientTo: "#ffffff",
-    decimalPlaces: 0,
-    color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
-    labelColor: (opacity = 1) => `rgba(55, 65, 81, ${opacity})`,
-    style: {
-      borderRadius: 12,
-    },
-    propsForDots: {
-      r: "5",
-      strokeWidth: "2",
-      stroke: "#10B981",
-    },
-    propsForBackgroundLines: {
-      strokeDasharray: "",
-      stroke: "#E5E7EB",
-      strokeWidth: 1,
-    },
-    propsForLabels: {
-      fontSize: 10,
-    },
-  };
+        const total = sessionRecords
+          .filter(
+            (r) =>
+              getDateString(new Date(r.timestamp)) === dateStr && r.completed
+          )
+          .reduce((sum, r) => sum + (r.duration || 0), 0);
 
-  // Weekly Focus Time Data
-  const now = new Date();
-  const weekData = Array(7)
-    .fill(0)
-    .map((_, i) => {
-      const d = new Date(now);
-      d.setDate(now.getDate() - (6 - i));
-      const dayStr = d.toLocaleDateString("en-US", { weekday: "short" });
-      const total = sessionRecords
-        .filter(
-          (r) =>
-            new Date(r.timestamp).toDateString() === d.toDateString() &&
-            r.completed
-        )
-        .reduce((sum, r) => sum + (r.duration || 0), 0);
-      return {
-        day: dayStr,
-        total: Math.round(total / 60),
-      };
-    });
+        return {
+          day: dayStr,
+          total: Math.round(total / 60),
+        };
+      });
 
-  // Focus Quality Trend Data
-  const focusQualityData = Array(7)
-    .fill(0)
-    .map((_, i) => {
-      const d = new Date(now);
-      d.setDate(now.getDate() - (6 - i));
-      const dayRecords = sessionRecords.filter(
-        (r) => new Date(r.timestamp).toDateString() === d.toDateString()
-      );
-      const avgQuality =
-        dayRecords.length > 0
-          ? dayRecords.reduce((sum, r) => sum + (r.focusQuality || 0), 0) /
-            dayRecords.length
-          : 0;
-      return {
-        day: d.toLocaleDateString("en-US", { weekday: "short" }),
-        quality: avgQuality,
-      };
-    });
+    return weekDataArray;
+  }, [sessionRecords]);
 
-  // Enhanced Flow Distribution Data
-  const flowDistributionData = mostCompletedFlows
-    .slice(0, 4)
-    .map((flow, index) => ({
+  // Memoized focus quality data calculation
+  const focusQualityData = useMemo(() => {
+    const now = new Date();
+    const qualityDataArray = Array(7)
+      .fill(0)
+      .map((_, i) => {
+        const d = new Date(now);
+        d.setDate(now.getDate() - (6 - i));
+        const dateStr = getDateString(d);
+
+        const dayRecords = sessionRecords.filter(
+          (r) => getDateString(new Date(r.timestamp)) === dateStr
+        );
+
+        const avgQuality =
+          dayRecords.length > 0
+            ? dayRecords.reduce((sum, r) => sum + (r.focusQuality || 0), 0) /
+              dayRecords.length
+            : 0;
+
+        return {
+          day: getDayName(d),
+          quality: avgQuality,
+        };
+      });
+
+    return qualityDataArray;
+  }, [sessionRecords]);
+
+  // Memoized flow distribution data
+  const flowDistributionData = useMemo(() => {
+    return mostCompletedFlows.slice(0, 4).map((flow, index) => ({
       name:
         flow.flowName.length > 12
           ? flow.flowName.substring(0, 12) + "..."
@@ -162,9 +148,10 @@ export default function Insights() {
       legendFontColor: "#6B7280",
       legendFontSize: 11,
     }));
+  }, [mostCompletedFlows]);
 
-  // Focus by Session Type Data
-  const sessionTypeData = React.useMemo(() => {
+  // Memoized session type data (already optimized)
+  const sessionTypeData = useMemo(() => {
     const typeStats: Record<string, { totalTime: number; count: number }> = {};
 
     sessionRecords.forEach((record) => {
@@ -199,17 +186,74 @@ export default function Insights() {
       }));
   }, [sessionRecords]);
 
-  // Success Rate Progress Data
-  const successRateProgress = flowSuccessRates.slice(0, 3).map((flow) => ({
-    name: flow.flowName,
-    rate: flow.successRate,
-    color:
-      flow.successRate >= 80
-        ? "#10B981"
-        : flow.successRate >= 60
-          ? "#F59E0B"
-          : "#EF4444",
-  }));
+  // Memoized success rate progress data
+  const successRateProgress = useMemo(() => {
+    return flowSuccessRates.slice(0, 3).map((flow) => ({
+      name: flow.flowName,
+      rate: flow.successRate,
+      color:
+        flow.successRate >= 80
+          ? "#10B981"
+          : flow.successRate >= 60
+            ? "#F59E0B"
+            : "#EF4444",
+    }));
+  }, [flowSuccessRates]);
+
+  // Memoized chart data for better performance
+  const weeklyChartData = useMemo(
+    () => ({
+      labels: weekData.map((d) => d.day),
+      datasets: [
+        {
+          data: weekData.map((d) => d.total),
+          color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
+        },
+      ],
+    }),
+    [weekData]
+  );
+
+  const focusQualityChartData = useMemo(
+    () => ({
+      labels: focusQualityData.map((d) => d.day),
+      datasets: [
+        {
+          data: focusQualityData.map((d) => d.quality),
+          color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
+          strokeWidth: 3,
+        },
+      ],
+    }),
+    [focusQualityData]
+  );
+
+  // Memoized best day calculation
+  const bestDay = useMemo(() => {
+    return weekData.length > 0
+      ? weekData.reduce((a, b) => (a.total > b.total ? a : b)).day
+      : "No data";
+  }, [weekData]);
+
+  // Memoized total weekly time
+  const totalWeeklyTime = useMemo(() => {
+    return weekData.reduce((sum, d) => sum + d.total, 0);
+  }, [weekData]);
+
+  // Memoized max weekly sessions
+  const maxWeeklySessions = useMemo(() => {
+    return Math.max(...weekData.map((d) => d.total), 0);
+  }, [weekData]);
+
+  // Memoized total session type time
+  const totalSessionTypeTime = useMemo(() => {
+    return sessionTypeData.reduce((sum, item) => sum + item.totalTime, 0);
+  }, [sessionTypeData]);
+
+  // Memoized most used session type
+  const mostUsedSessionType = useMemo(() => {
+    return sessionTypeData[0]?.name || "No data";
+  }, [sessionTypeData]);
 
   return (
     <View className="flex-1 bg-gray-50 dark:bg-gray-900">
@@ -224,7 +268,7 @@ export default function Insights() {
       </View>
 
       <ScrollView
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 80 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 160 }}
         showsVerticalScrollIndicator={false}
       >
         {/* Productivity Score Card */}
@@ -327,10 +371,7 @@ export default function Insights() {
                     Best Day
                   </Text>
                   <Text className="text-sm font-SoraBold text-gray-900 dark:text-white">
-                    {weekData.length > 0
-                      ? weekData.reduce((a, b) => (a.total > b.total ? a : b))
-                          .day
-                      : "No data"}
+                    {bestDay}
                   </Text>
                 </View>
                 <View className="flex-row items-center justify-between">
@@ -338,7 +379,7 @@ export default function Insights() {
                     Most Sessions
                   </Text>
                   <Text className="text-sm font-SoraBold text-gray-900 dark:text-white">
-                    {Math.max(...weekData.map((d) => d.total), 0)} min
+                    {maxWeeklySessions} min
                   </Text>
                 </View>
                 <View className="flex-row items-center justify-between">
@@ -415,42 +456,16 @@ export default function Insights() {
               className="overflow-hidden rounded-2xl bg-white"
               style={{ width: chartWidth }}
             >
-              <BarChart
-                data={{
-                  labels: weekData.map((d) => d.day),
-                  datasets: [
-                    {
-                      data: weekData.map((d) => d.total),
-                      color: (opacity = 1) => `rgba(59, 130, 246, ${opacity})`,
-                    },
-                  ],
-                }}
-                width={chartWidth}
-                height={180}
-                chartConfig={chartConfig}
-                style={{
-                  marginVertical: 0,
-                  borderRadius: 0,
-                  marginLeft: -30,
-                }}
-                showValuesOnTopOfBars={false}
-                fromZero={true}
-                yAxisLabel=""
-                yAxisSuffix=""
-                withHorizontalLabels={true}
-              />
+              <WeeklyChart data={weeklyChartData} width={chartWidth} />
             </View>
           </View>
 
           <View className="flex-row justify-between items-center mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
             <Text className="text-sm text-gray-600 dark:text-gray-400 font-Sora">
-              Best day:{" "}
-              {weekData.length > 0
-                ? weekData.reduce((a, b) => (a.total > b.total ? a : b)).day
-                : "No data"}
+              Best day: {bestDay}
             </Text>
             <Text className="text-sm font-SoraSemiBold text-blue-600 dark:text-blue-400">
-              {weekData.reduce((sum, d) => sum + d.total, 0)} min total
+              {totalWeeklyTime} min total
             </Text>
           </View>
         </View>
@@ -474,31 +489,9 @@ export default function Insights() {
               className="overflow-hidden rounded-2xl bg-white"
               style={{ width: chartWidth }}
             >
-              <LineChart
-                data={{
-                  labels: focusQualityData.map((d) => d.day),
-                  datasets: [
-                    {
-                      data: focusQualityData.map((d) => d.quality),
-                      color: (opacity = 1) => `rgba(16, 185, 129, ${opacity})`,
-                      strokeWidth: 3,
-                    },
-                  ],
-                }}
+              <FocusQualityChart
+                data={focusQualityChartData}
                 width={chartWidth}
-                height={160}
-                chartConfig={greenChartConfig}
-                bezier
-                style={{
-                  marginVertical: 0,
-                  borderRadius: 0,
-                  marginLeft: -25,
-                }}
-                withHorizontalLabels={true}
-                withVerticalLabels={true}
-                withDots={true}
-                withShadow={false}
-                fromZero={true}
               />
             </View>
           </View>
@@ -533,16 +526,10 @@ export default function Insights() {
                 className="bg-white rounded-2xl p-4 items-center"
                 style={{ width: "100%" }}
               >
-                <PieChart
+                <PieChartComponent
                   data={sessionTypeData}
                   width={miniChartWidth}
-                  height={200}
-                  chartConfig={chartConfig}
                   accessor="totalTime"
-                  backgroundColor="transparent"
-                  paddingLeft="0"
-                  hasLegend={false}
-                  absolute
                 />
               </View>
             </View>
@@ -576,11 +563,10 @@ export default function Insights() {
 
             <View className="flex-row justify-between items-center mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
               <Text className="text-sm text-gray-600 dark:text-gray-400 font-Sora">
-                Most used: {sessionTypeData[0]?.name || "No data"}
+                Most used: {mostUsedSessionType}
               </Text>
               <Text className="text-sm font-SoraSemiBold text-blue-600 dark:text-blue-400">
-                {sessionTypeData.reduce((sum, item) => sum + item.totalTime, 0)}{" "}
-                min total
+                {totalSessionTypeTime} min total
               </Text>
             </View>
           </View>
@@ -598,16 +584,10 @@ export default function Insights() {
                 className="bg-white rounded-2xl p-4 items-center"
                 style={{ width: "100%" }}
               >
-                <PieChart
+                <PieChartComponent
                   data={flowDistributionData}
                   width={miniChartWidth}
-                  height={200}
-                  chartConfig={chartConfig}
                   accessor="count"
-                  backgroundColor="transparent"
-                  paddingLeft="0"
-                  hasLegend={false}
-                  absolute
                 />
               </View>
             </View>
