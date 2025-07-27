@@ -4,7 +4,8 @@ import { router } from "expo-router";
 import { Text, View } from "react-native";
 import Notification from "@/assets/svg/onboarding/notifications.svg";
 import Progress from "@/assets/svg/onboarding/progress4.svg";
-import { notificationPermissions } from "@/hooks/notificationPermission"
+import requestPermisions from "@/hooks/notificationPermission";
+
 
 export default function Notifications() {
   return (
@@ -35,12 +36,7 @@ export default function Notifications() {
           <View>
             <Button
               buttonText={Strings.notificationsBtn1}
-              nextPage={async () => {
-                const hasPermission = await notificationPermissions();
-                if (hasPermission) {
-                  router.push("/(onboarding)/completeSetup");
-                }
-              }}
+              nextPage={async () => requestPermisions}
             />
           </View>
           <View className="mt-5">

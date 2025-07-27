@@ -8,10 +8,11 @@ import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect } from "react";
-import { StyleSheet, View } from "react-native";
+import { StyleSheet, View, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Toast, { BaseToast, ErrorToast } from "react-native-toast-message";
+
 
 // load splashscreen
 SplashScreen.preventAutoHideAsync();
@@ -32,6 +33,10 @@ export default function RootLayout() {
       await SplashScreen.hideAsync();
     }
   }, [fontsLoaded]);
+
+
+
+
 
   useEffect(() => {
     if (fontsLoaded) {

@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 
+
 // Icons
 import ChevronDown from "@/assets/svg/chevron-down.svg";
 import Edit from "@/assets/svg/edit.svg";
@@ -39,8 +40,7 @@ export default function Focus() {
   const router = useRouter();
   // Modal visibility states
   const [isQuickTaskModalVisible, setIsQuickTaskModalVisible] = useState(false);
-  const [isSessionTypeModalVisible, setIsSessionTypeModalVisible] =
-    useState(false);
+  const [isSessionTypeModalVisible, setIsSessionTypeModalVisible] = useState(false);
   const [isFlowModalVisible, setIsFlowModalVisible] = useState(false);
   const [isTimeModalVisible, setIsTimeModalVisible] = useState(false);
   const [showQuoteModal, setShowQuoteModal] = useState(false);
@@ -455,6 +455,10 @@ export default function Focus() {
     }
   }, [currentFlowId, isRunning, isPaused, addTaskOpacity]);
 
+  // show notification banner on start of each session
+  const notification = async () => {
+
+  }
   return (
     <View className="flex-1 bg-primary pb-20">
       {/* Toast for reflection save */}
@@ -645,6 +649,7 @@ export default function Focus() {
                   </TouchableOpacity>
                 </View>
               </View>
+
               {/* Start/Pause Button */}
               <View className="w-full items-center">
                 <View className="w-32">
@@ -652,9 +657,16 @@ export default function Focus() {
                     onStart={resumeSession}
                     onPause={pauseSession}
                     onReset={reset}
+                    
                   />
                 </View>
               </View>
+
+              <TouchableOpacity
+              onPress={notification}
+              >
+                <Text>Notification Test</Text>
+              </TouchableOpacity>
 
               {/* Add Task Button */}
               <View className="w-full items-center mt-6">

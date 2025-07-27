@@ -1,9 +1,14 @@
-import * as Notifications from "expo-notifications";
+import notifee from "@notifee/react-native";
 
-export const notificationPermissions = async () => {
-    const {status} = await Notifications.requestPermissionsAsync();
-    if (status === Notifications.PermissionStatus.GRANTED){
+async function requestPermisions () {
+    const settings = await notifee.requestPermission();
+
+    if(settings.authorizationStatus >= 1) {
+        //  this means permission granted
         return true;
+    } else {
+        return false;
     }
-    return false;
 }
+
+export default requestPermisions
