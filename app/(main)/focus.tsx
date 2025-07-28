@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import notifee from "@notifee/react-native";
 
 
 // Icons
@@ -455,8 +456,35 @@ export default function Focus() {
     }
   }, [currentFlowId, isRunning, isPaused, addTaskOpacity]);
 
+
+
   // show notification banner on start of each session
   const notification = async () => {
+
+    // request permission for iOS... always
+    await notifee.requestPermission();
+
+    // create a channel. This is required for android
+    const channelId = await notifee.createChannel({
+      id: "default",
+      name: "default channel"
+    });
+
+    // display a notification
+    await notifee.displayNotification({
+      title: "Session running",
+      body: "Yeah it's working",
+
+      android: {
+        channelId: channelId,
+        smallIcon: "ic_launcher",
+
+        // press action is when you want the app to open when the notification is pressed
+        pressAction: {
+          id: "default",
+        }
+      }
+    })
 
   }
   return (

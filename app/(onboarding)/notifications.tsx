@@ -7,6 +7,7 @@ import Progress from "@/assets/svg/onboarding/progress4.svg";
 import requestPermisions from "@/hooks/notificationPermission";
 
 
+
 export default function Notifications() {
   return (
     <View
@@ -36,7 +37,10 @@ export default function Notifications() {
           <View>
             <Button
               buttonText={Strings.notificationsBtn1}
-              nextPage={async () => requestPermisions}
+              nextPage={() => {
+                requestPermisions();
+                router.push("/(onboarding)/completeSetup");
+              }}
             />
           </View>
           <View className="mt-5">

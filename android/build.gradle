@@ -22,7 +22,6 @@ def reactNativeAndroidDir = new File(
 
 allprojects {
   repositories {
-    maven {url 'https://notifee.github.io/maven'}
     maven {
       // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
       url(reactNativeAndroidDir)
@@ -31,9 +30,14 @@ allprojects {
     google()
     mavenCentral()
     maven { url 'https://www.jitpack.io' }
-    
-  }
+// @generated begin notifieeAndroidWorkaround - expo prebuild (DO NOT MODIFY) sync-0e75cfcaeb22e37f891ede3e4f3643f599f4f21e
 
+    maven { 
+        url "$rootDir/../node_modules/@notifee/react-native/android/libs" 
+    }
+
+// @generated end notifieeAndroidWorkaround
+  }
 }
 
 apply plugin: "expo-root-project"
