@@ -1,3 +1,5 @@
+import BackgroundEventTest from "@/components/BackgroundEventTest";
+import NotificationTestSimple from "@/components/NotificationTestSimple";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
@@ -53,6 +55,8 @@ export default function Journal() {
 
   return (
     <View className="flex-1 bg-primary pt-8 relative">
+      <NotificationTestSimple />
+      <BackgroundEventTest />
       {entries.length === 0 ? (
         <View className="flex-1 items-center justify-center px-4">
           {/* Placeholder for empty state illustration */}

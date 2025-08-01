@@ -4,11 +4,15 @@ import { router } from "expo-router";
 import { Text, View } from "react-native";
 import Notification from "@/assets/svg/onboarding/notifications.svg";
 import Progress from "@/assets/svg/onboarding/progress4.svg";
-import requestPermisions from "@/hooks/notificationPermission";
+import notifee from "@notifee/react-native";
 
 
 
 export default function Notifications() {
+
+  const getPermissions = async () => {
+    await notifee.requestPermission();
+  }
   return (
     <View
       className="mt-10 flex-1 relative"
@@ -37,10 +41,7 @@ export default function Notifications() {
           <View>
             <Button
               buttonText={Strings.notificationsBtn1}
-              nextPage={() => {
-                requestPermisions();
-                router.push("/(onboarding)/completeSetup");
-              }}
+              nextPage={() => {getPermissions(); router.push("/completeSetup");}}
             />
           </View>
           <View className="mt-5">

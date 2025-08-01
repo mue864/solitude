@@ -90,6 +90,9 @@ export interface SessionState {
   longestStreak: number;
   lastSessionDate: string | null;
 
+  // checking if it's a new session
+  isNewSession: boolean;
+
   // Actions
   setSessionType: (type: SessionType) => void;
   setDuration: (duration: number | ((prev: number) => number)) => void;
@@ -202,6 +205,7 @@ export const useSessionStore = create<SessionState>()(
         currentStreak: 0,
         longestStreak: 0,
         lastSessionDate: null,
+        isNewSession: true,
 
         // Actions
         setSessionType: (type) => {
@@ -224,13 +228,19 @@ export const useSessionStore = create<SessionState>()(
 
         resumeSession: () => {
           const state = get();
+          
 
           if (state.isRunning && !state.isPaused) return;
 
+          
+          
+          
           // handle start notification here
           if (!state.isRunning && !state.isPaused) {
             // basically this means that the session is new
-            // showStartNotification();
+           set({isNewSession: true})
+          } else {
+            set({isNewSession: false})
           }
 
           if (state.isPaused && lastPauseTimeRef) {
