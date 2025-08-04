@@ -1,14 +1,13 @@
 import { useSessionStore } from "@/store/sessionState";
+import * as Haptics from "expo-haptics";
 import React from "react";
 import {
   Modal,
   Text,
   TouchableOpacity,
   TouchableWithoutFeedback,
-  Vibration,
   View,
 } from "react-native";
-import * as Haptics from "expo-haptics";
 
 interface StartSessionBtnProps {
   onStart: () => void;

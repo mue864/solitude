@@ -33,10 +33,16 @@ import SessionIndicator from "@/components/SessionIndicator";
 import { useFlowStore } from "@/store/flowStore";
 import { useJournalStore } from "@/store/journalStore";
 import { useSessionStore, type SessionType } from "@/store/sessionState";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import Toast from "react-native-toast-message";
+
+// notifications
+import { useNotifications } from "@/hooks/useNotifications";
 
 export default function Focus() {
   const router = useRouter();
+  const notifications = useNotifications();
+
   // Modal visibility states
   const [isQuickTaskModalVisible, setIsQuickTaskModalVisible] = useState(false);
   const [isSessionTypeModalVisible, setIsSessionTypeModalVisible] =
@@ -88,6 +94,7 @@ export default function Focus() {
     showFlowCompletionModal,
     flowCompletionData,
     hideFlowCompletionModal,
+    isNewSession,
   } = useSessionStore();
 
   // Calculate duration in minutes
@@ -110,8 +117,109 @@ export default function Focus() {
   const prevSessionId = useRef(currentSessionId);
   const prevIsRunning = useRef(isRunning);
 
-  // Show quote modal at meaningful moments
+  // Initialize notifications and handle pending actions
   useEffect(() => {
+    const initializeNotifications = async () => {
+      try {
+        console.log("Initializing notifications in focus component...");
+        await notifications.initialize();
+        console.log(
+          "Notifications initialized successfully in focus component"
+        );
+
+        // Check for pending actions from background notifications
+        const pendingAction = await AsyncStorage.getItem("pendingAction");
+        if (pendingAction) {
+          console.log("Found pending action:", pendingAction);
+          switch (pendingAction) {
+            case "background-session-reminder":
+              // Navigate to focus screen (already here, so just clear the action)
+              console.log("🎯 Background session reminder action handled");
+              break;
+            case "start-session":
+              resumeSession();
+              break;
+            case "pause-session":
+              pauseSession();
+              break;
+            case "end-session":
+              reset();
+              break;
+          }
+          await AsyncStorage.removeItem("pendingAction");
+        }
+
+        // Test notification after initialization
+        setTimeout(async () => {
+          try {
+            await notifications.showTestNotification();
+            console.log("✅ Test notification sent after initialization");
+          } catch (error) {
+            console.error("❌ Failed to send test notification:", error);
+          }
+        }, 2000);
+      } catch (error) {
+        console.error(
+          "Failed to initialize notifications in focus component:",
+          error
+        );
+      }
+    };
+
+    initializeNotifications();
+  }, []);
+
+  const handleSessionStart = async () => {
+    resumeSession();
+
+    // Schedule session end notification
+    await notifications.scheduleSessionEndNotification(
+      sessionType,
+      durationMinutes
+    );
+
+    // Schedule break reminder
+    // await notifications.scheduleBreakReminder(durationMinutes);
+  };
+
+  const handleSessionEnd = async () => {
+    await notifications.cancelAllNotifications();
+
+    // Check for current streak milestones
+    await notifications.showStreakMilestoneNotification(currentStreak);
+  };
+
+  // Handle session pause/resume notifications
+  useEffect(() => {
+    if (isPaused && !prevIsRunning.current) {
+      // Session was just paused
+      notifications.showSessionPauseNotification();
+      notifications.updateSessionState(false, true);
+    } else if (isRunning && prevIsRunning.current === false) {
+      // Session was just resumed
+      if (!isNewSession) {
+        notifications.showSessionResumeNotification();
+        console.log("In here");
+      }
+      notifications.updateSessionState(true, false);
+    } else if (!isRunning && prevIsRunning.current) {
+      // Session ended
+      notifications.updateSessionState(false, false);
+    }
+  }, [isRunning, isPaused, isNewSession]);
+
+  // Handle session start notification for new sessions
+  useEffect(() => {
+
+    if (isRunning && isNewSession) {
+      notifications.showSessionStartNotification(sessionType, durationMinutes);
+    }
+  }, [isRunning, isNewSession, sessionType, durationMinutes]);
+
+  // Session pause/resume notifications are now handled by the notification hook
+
+  useEffect(() => {
+    // Show quote modal at meaningful moments
     if (!isRunning || !currentSessionId) {
       return;
     }
@@ -364,7 +472,7 @@ export default function Focus() {
     sessionControlsTranslateY,
   ]);
 
-  const addJournal = useJournalStore((s) => s.addEntry);
+  const addJournalEntry = useJournalStore((s) => s.addEntry);
 
   // Call this when session completes:
   const handleSessionComplete = () => {
@@ -384,9 +492,11 @@ export default function Focus() {
     title: string;
     content: string;
   }) => {
-    addJournal({ title, content });
+    addJournalEntry({
+      title,
+      blocks: [{ type: "text", content }],
+    });
     setShowReflect(false);
-    setShowSessionComplete(false);
     Toast.show({
       type: "reflectionSaveToast",
       text1: "Reflection",
@@ -645,13 +755,14 @@ export default function Focus() {
                   </TouchableOpacity>
                 </View>
               </View>
+
               {/* Start/Pause Button */}
               <View className="w-full items-center">
                 <View className="w-32">
                   <StartSessionBtn
-                    onStart={resumeSession}
+                    onStart={handleSessionStart}
                     onPause={pauseSession}
-                    onReset={reset}
+                    onReset={handleSessionEnd}
                   />
                 </View>
               </View>

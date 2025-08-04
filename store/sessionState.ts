@@ -5,6 +5,7 @@ import { persist } from "zustand/middleware";
 import { useFlowStore } from "./flowStore";
 import { useSessionIntelligence } from "./sessionIntelligence";
 
+
 // Session types and their durations in seconds
 export const SESSION_TYPES: Record<SessionType, number> = {
   Classic: 25 * 60, // 25 minutes
@@ -89,6 +90,9 @@ export interface SessionState {
   longestStreak: number;
   lastSessionDate: string | null;
 
+  // checking if it's a new session
+  isNewSession: boolean;
+
   // Actions
   setSessionType: (type: SessionType) => void;
   setDuration: (duration: number | ((prev: number) => number)) => void;
@@ -107,7 +111,10 @@ export interface SessionState {
   pauseFlow: () => void;
   endFlow: () => void;
   hideFlowCompletionModal: () => void;
+
 }
+
+
 
 export const useSessionStore = create<SessionState>()(
   persist(
@@ -198,6 +205,7 @@ export const useSessionStore = create<SessionState>()(
         currentStreak: 0,
         longestStreak: 0,
         lastSessionDate: null,
+        isNewSession: true,
 
         // Actions
         setSessionType: (type) => {
@@ -217,9 +225,23 @@ export const useSessionStore = create<SessionState>()(
           lastPauseTimeRef = null;
         },
 
+
         resumeSession: () => {
           const state = get();
+          
+
           if (state.isRunning && !state.isPaused) return;
+
+          
+          
+          
+          // handle start notification here
+          if (!state.isRunning && !state.isPaused) {
+            // basically this means that the session is new
+           set({isNewSession: true})
+          } else {
+            set({isNewSession: false})
+          }
 
           if (state.isPaused && lastPauseTimeRef) {
             // Resume from pause - calculate and accumulate pause duration
