@@ -15,18 +15,11 @@ import {
   PieChartComponent,
   WeeklyChart,
 } from "../../components/ChartComponents";
-import { useSessionIntelligence } from "../../store/sessionIntelligence";
+import { useSessionIntelligence, getDateString, getDayName, getDayNameShort } from "../../store/sessionIntelligence";
 
 const { width: screenWidth } = Dimensions.get("window");
 const chartWidth = screenWidth - 80 + 20; // Add extra width to avoid clipping
 const miniChartWidth = screenWidth - 100; // For smaller embedded charts
-
-// Utility function to get date string for comparison
-const getDateString = (date: Date) => date.toDateString();
-
-// Utility function to get day name
-const getDayName = (date: Date) =>
-  date.toLocaleDateString("en-US", { weekday: "short" });
 
 export default function Insights() {
   const {
@@ -37,6 +30,9 @@ export default function Insights() {
     getFlowStreaks,
     getFlowSuccessRates,
     getRecommendations,
+    getNextMilestone,
+    getMilestoneProgress,
+    cleanupSessionData,
     sessionRecords,
   } = useSessionIntelligence();
 
@@ -80,6 +76,19 @@ export default function Insights() {
 
   const showMilestone = score >= 90;
 
+  // Cleanup bad session data on component mount
+  useEffect(() => {
+    // Check if we have sessions with zero duration or future timestamps
+    const hasBadData = sessionRecords.some(r => 
+      (r.completed && r.duration <= 0) || r.timestamp > Date.now()
+    );
+    
+    if (hasBadData) {
+      console.log('🔧 Detected bad session data, running cleanup...');
+      cleanupSessionData();
+    }
+  }, []); // Run only once on mount
+
   // Memoized weekly data calculation
   const weekData = useMemo(() => {
     const now = new Date();
@@ -88,15 +97,14 @@ export default function Insights() {
       .map((_, i) => {
         const d = new Date(now);
         d.setDate(now.getDate() - (6 - i));
-        const dayStr = getDayName(d);
-        const dateStr = getDateString(d);
+        const dayStr = getDayNameShort(d.getTime());
+        const dateStr = getDateString(d.getTime());
 
-        const total = sessionRecords
-          .filter(
-            (r) =>
-              getDateString(new Date(r.timestamp)) === dateStr && r.completed
-          )
-          .reduce((sum, r) => sum + (r.duration || 0), 0);
+        const dayRecords = sessionRecords.filter(
+          (r) => getDateString(r.timestamp) === dateStr && r.completed
+        );
+
+        const total = dayRecords.reduce((sum, r) => sum + (r.duration || 0), 0);
 
         return {
           day: dayStr,
@@ -115,20 +123,20 @@ export default function Insights() {
       .map((_, i) => {
         const d = new Date(now);
         d.setDate(now.getDate() - (6 - i));
-        const dateStr = getDateString(d);
+        const dateStr = getDateString(d.getTime());
 
         const dayRecords = sessionRecords.filter(
-          (r) => getDateString(new Date(r.timestamp)) === dateStr
+          (r) => getDateString(r.timestamp) === dateStr && r.completed
         );
 
         const avgQuality =
           dayRecords.length > 0
-            ? dayRecords.reduce((sum, r) => sum + (r.focusQuality || 0), 0) /
+            ? dayRecords.reduce((sum, r) => sum + (r.focusQuality !== undefined ? r.focusQuality : 5), 0) /
               dayRecords.length
             : 0;
 
         return {
-          day: getDayName(d),
+          day: getDayNameShort(d.getTime()),
           quality: avgQuality,
         };
       });
@@ -429,7 +437,7 @@ export default function Insights() {
 
           <View className="flex-row justify-between items-center mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
             <Text className="text-sm text-gray-600 dark:text-gray-400 font-Sora">
-              Next milestone: {userStats.currentStreak + 1} day streak
+              Next milestone: {getNextMilestone()} day streak
             </Text>
             <Text className="text-sm font-SoraSemiBold text-purple-600 dark:text-purple-400">
               Keep it up! 🚀

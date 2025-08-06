@@ -5,7 +5,6 @@ import { persist } from "zustand/middleware";
 import { useFlowStore } from "./flowStore";
 import { useSessionIntelligence } from "./sessionIntelligence";
 
-
 // Session types and their durations in seconds
 export const SESSION_TYPES: Record<SessionType, number> = {
   Classic: 25 * 60, // 25 minutes
@@ -111,10 +110,7 @@ export interface SessionState {
   pauseFlow: () => void;
   endFlow: () => void;
   hideFlowCompletionModal: () => void;
-
 }
-
-
 
 export const useSessionStore = create<SessionState>()(
   persist(
@@ -225,22 +221,17 @@ export const useSessionStore = create<SessionState>()(
           lastPauseTimeRef = null;
         },
 
-
         resumeSession: () => {
           const state = get();
-          
 
           if (state.isRunning && !state.isPaused) return;
 
-          
-          
-          
           // handle start notification here
           if (!state.isRunning && !state.isPaused) {
             // basically this means that the session is new
-           set({isNewSession: true})
+            set({ isNewSession: true });
           } else {
-            set({isNewSession: false})
+            set({ isNewSession: false });
           }
 
           if (state.isPaused && lastPauseTimeRef) {

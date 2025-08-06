@@ -57,10 +57,10 @@ const greenChartConfig = {
 interface WeeklyChartProps {
   data: {
     labels: string[];
-    datasets: Array<{
+    datasets: {
       data: number[];
       color: (opacity?: number) => string;
-    }>;
+    }[];
   };
   width: number;
 }
@@ -86,14 +86,16 @@ export const WeeklyChart = React.memo<WeeklyChartProps>(({ data, width }) => (
   </View>
 ));
 
+WeeklyChart.displayName = 'WeeklyChart';
+
 interface FocusQualityChartProps {
   data: {
     labels: string[];
-    datasets: Array<{
+    datasets: {
       data: number[];
       color: (opacity?: number) => string;
       strokeWidth: number;
-    }>;
+    }[];
   };
   width: number;
 }
@@ -122,15 +124,17 @@ export const FocusQualityChart = React.memo<FocusQualityChartProps>(
   )
 );
 
+FocusQualityChart.displayName = 'FocusQualityChart';
+
 interface PieChartComponentProps {
-  data: Array<{
+  data: {
     name: string;
     count?: number;
     totalTime?: number;
     color: string;
     legendFontColor: string;
     legendFontSize: number;
-  }>;
+  }[];
   width: number;
   accessor: "count" | "totalTime";
 }
@@ -138,20 +142,25 @@ interface PieChartComponentProps {
 export const PieChartComponent = React.memo<PieChartComponentProps>(
   ({ data, width, accessor }) => (
     <View
-      className="bg-white rounded-2xl p-4 items-center"
+      className="bg-white rounded-2xl p-4 items-center justify-center"
       style={{ width: "100%" }}
     >
-      <PieChart
-        data={data}
-        width={width}
-        height={200}
-        chartConfig={chartConfig}
-        accessor={accessor}
-        backgroundColor="transparent"
-        paddingLeft="0"
-        hasLegend={false}
-        absolute
-      />
+      <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+        <PieChart
+          data={data}
+          width={width}
+          height={200}
+          chartConfig={chartConfig}
+          accessor={accessor}
+          backgroundColor="transparent"
+          paddingLeft="65"
+          hasLegend={false}
+          absolute
+          center={[0, 0]}
+        />
+      </View>
     </View>
   )
 );
+
+PieChartComponent.displayName = 'PieChartComponent';
