@@ -1,41 +1,33 @@
-import TaskGroup from "@/components/TaskGroup";
 import AddTaskModal from "@/components/modals/AddTaskModal";
 import EditTaskModal from "@/components/modals/EditTaskModal";
 import TaskSwitchWarningModal from "@/components/modals/TaskSwitchWarningModal";
+import { TAG_COLOR } from "@/components/TaskCard";
+import TaskGroup from "@/components/TaskGroup";
+import { useTheme } from "@/context/ThemeContext";
 import { Task, TaskTag, useTaskStore } from "@/store/taskStore";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useRef, useState } from "react";
 import {
-  LayoutAnimation,
-  Platform,
   ScrollView,
+  StyleSheet,
   Text,
   TouchableOpacity,
-  UIManager,
   View,
 } from "react-native";
 import Toast from "react-native-toast-message";
 
-const GROUPS: { label: string; tag: TaskTag }[] = [
+const GROUPS: { label: string; tag: Exclude<TaskTag, null> }[] = [
   { label: "Urgent", tag: "urgent" },
   { label: "Important", tag: "important" },
   { label: "Deep Work", tag: "deepwork" },
   { label: "Quick Win", tag: "quickwin" },
 ];
 
-// Enable LayoutAnimation on Android
-if (
-  Platform.OS === "android" &&
-  UIManager.setLayoutAnimationEnabledExperimental
-) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
-
 export default function Plan() {
+  const { colors } = useTheme();
   const router = useRouter();
   const {
-    tasks,
     addTask,
     updateTask,
     deleteTask,
@@ -55,8 +47,11 @@ export default function Plan() {
   const [pendingTaskSwitch, setPendingTaskSwitch] = useState<Task | null>(null);
   const undoTimeout = useRef<NodeJS.Timeout | null>(null);
 
-  // Group active tasks by tag
   const activeTasks = getActiveTasks();
+  const completedTasks = getCompletedTasks();
+  const currentTask = getCurrentTask();
+
+  // Group active non-pinned tasks by tag
   const groupedTasks: Record<Exclude<TaskTag, null> | "default", Task[]> = {
     urgent: [],
     important: [],
@@ -65,22 +60,19 @@ export default function Plan() {
     default: [],
   };
   activeTasks.forEach((task) => {
-    let groupKey: Exclude<TaskTag, null> | "default" = "default";
-    if (
-      task.tag === "urgent" ||
-      task.tag === "important" ||
-      task.tag === "deepwork" ||
-      task.tag === "quickwin"
-    ) {
-      groupKey = task.tag;
-    }
-    groupedTasks[groupKey].push(task);
+    if (task.id === currentTaskId) return;
+    const key = (
+      ["urgent", "important", "deepwork", "quickwin"] as const
+    ).includes(task.tag as Exclude<TaskTag, null>)
+      ? (task.tag as Exclude<TaskTag, null>)
+      : "default";
+    groupedTasks[key].push(task);
   });
 
-  // Completed tasks
-  const completedTasks = getCompletedTasks();
+  const remainingCount = activeTasks.filter(
+    (t) => t.id !== currentTaskId,
+  ).length;
 
-  // Handlers
   const handleAddTask = (data: { name: string; tag: TaskTag }) => {
     addTask({
       id: Date.now().toString(),
@@ -92,33 +84,28 @@ export default function Plan() {
   };
 
   const handleEditTask = (task: Task) => {
-    // Don't allow editing the currently active task
     if (task.id === currentTaskId) {
       Toast.show({
         type: "warningToast",
         text1: "Cannot Edit Active Task",
-        text2: "Please complete or switch tasks first",
+        text2: "Complete or switch tasks first",
         position: "top",
         topOffset: 60,
         props: { onPress: () => Toast.hide() },
       });
       return;
     }
-
     setEditTask(task);
     setEditModalVisible(true);
   };
 
   const handleSaveEdit = (data: { name: string; tag: TaskTag }) => {
-    if (editTask) {
-      updateTask({ ...editTask, name: data.name, tag: data.tag });
-    }
+    if (editTask) updateTask({ ...editTask, name: data.name, tag: data.tag });
     setEditModalVisible(false);
     setEditTask(null);
   };
 
   const handleDeleteTask = (task: Task) => {
-    // Don't allow deleting the currently active task
     if (task.id === currentTaskId) {
       Toast.show({
         type: "warningToast",
@@ -126,13 +113,12 @@ export default function Plan() {
         topOffset: 60,
         props: {
           text1: "Cannot Delete Active Task",
-          text2: "Please complete or switch tasks first",
+          text2: "Complete or switch tasks first",
           onPress: () => Toast.hide(),
         },
       });
       return;
     }
-
     setDeletedTask(task);
     deleteTask(task.id);
     Toast.show({
@@ -144,7 +130,6 @@ export default function Plan() {
       topOffset: 60,
       onHide: () => setDeletedTask(null),
     });
-    // Hide toast after 4s
     if (undoTimeout.current) clearTimeout(undoTimeout.current);
     undoTimeout.current = setTimeout(() => {
       Toast.hide();
@@ -161,20 +146,16 @@ export default function Plan() {
   };
 
   const handleCompleteTask = (task: Task) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setCurrentTask(task.id);
     completeCurrentTask();
   };
 
   const handlePlayTask = (task: Task) => {
-    const currentTask = getCurrentTask();
-
-    // If there's already an active task and it's different from the one being clicked
-    if (currentTask && currentTask.id !== task.id) {
+    const current = getCurrentTask();
+    if (current && current.id !== task.id) {
       setPendingTaskSwitch(task);
       setWarningModalVisible(true);
     } else {
-      // No active task or same task, proceed normally
       setCurrentTask(task.id);
       router.push("/focus");
     }
@@ -194,87 +175,178 @@ export default function Plan() {
     setPendingTaskSwitch(null);
   };
 
-  const handleRemoveCompleted = (task: Task) => {
-    deleteTask(task.id);
-  };
+  const pinnedDotColor = TAG_COLOR[currentTask?.tag ?? "default"];
 
   return (
-    <View className="flex-1 bg-primary relative">
+    <View style={[s.screen, { backgroundColor: colors.background }]}>
       <ScrollView
-        contentContainerStyle={{ paddingBottom: 180 }}
+        contentContainerStyle={s.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <View className="flex-row justify-center items-center mx-4 mt-4 mb-2">
-          <Text className="text-text-primary text-center text-2xl font-SoraSemiBold">
-            Plan your day, one {"\n"} task at a time.
+        {/* Header */}
+        <View style={s.header}>
+          <Text style={[s.title, { color: colors.textPrimary }]}>
+            Today's Plan
+          </Text>
+          <Text style={[s.subtitle, { color: colors.textSecondary }]}>
+            {activeTasks.length === 0
+              ? "No tasks yet — add one below"
+              : `${activeTasks.length} task${activeTasks.length !== 1 ? "s" : ""} remaining`}
           </Text>
         </View>
-        <View className="px-4 mt-2">
-          {GROUPS.map(({ label, tag }) => (
-            <TaskGroup
-              key={tag}
-              label={label}
-              tag={tag}
-              tasks={groupedTasks[tag || "default"]}
-              onDelete={handleDeleteTask}
-              onEdit={handleEditTask}
-              onComplete={handleCompleteTask}
-              onPlay={handlePlayTask}
-            />
-          ))}
-        </View>
-        {/* Completed Tasks */}
-        <View className="px-4 mt-6">
-          <Text className="text-center text-lg font-SoraSemiBold text-text-secondary mb-2">
-            Completed Tasks
-          </Text>
-          {completedTasks.length === 0 ? (
-            <Text className="text-center text-gray-400 font-SoraSemiBold py-6">
-              No completed tasks yet.
+
+        {/* Pinned current task */}
+        {currentTask && !currentTask.completed && (
+          <View style={s.section}>
+            <Text style={[s.sectionLabel, { color: colors.textSecondary }]}>
+              Now Focused
             </Text>
-          ) : (
-            completedTasks.map((task) => (
+            <View
+              style={[
+                s.pinnedCard,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.accent,
+                },
+              ]}
+            >
+              <View style={s.pinnedRow}>
+                <View
+                  style={[s.pinnedDot, { backgroundColor: pinnedDotColor }]}
+                />
+                <Text
+                  style={[s.pinnedName, { color: colors.textPrimary }]}
+                  numberOfLines={1}
+                >
+                  {currentTask.name}
+                </Text>
+              </View>
+              <View style={s.pinnedMeta}>
+                <View
+                  style={[
+                    s.activeBadge,
+                    { backgroundColor: colors.accentMuted },
+                  ]}
+                >
+                  <Text style={[s.activeBadgeText, { color: colors.accent }]}>
+                    Active
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[s.focusBtn, { backgroundColor: colors.accent }]}
+                  onPress={() => router.push("/focus")}
+                >
+                  <Ionicons name="play" size={12} color="#fff" />
+                  <Text style={s.focusBtnText}>Go to focus</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Task groups */}
+        {remainingCount > 0 && (
+          <View style={s.section}>
+            {currentTask && !currentTask.completed && (
+              <Text style={[s.sectionLabel, { color: colors.textSecondary }]}>
+                Up Next
+              </Text>
+            )}
+            {GROUPS.map(({ label, tag }) => (
+              <TaskGroup
+                key={tag}
+                label={label}
+                tag={tag}
+                tasks={groupedTasks[tag]}
+                onDelete={handleDeleteTask}
+                onEdit={handleEditTask}
+                onComplete={handleCompleteTask}
+                onPlay={handlePlayTask}
+              />
+            ))}
+            {groupedTasks.default.length > 0 && (
+              <TaskGroup
+                label="Other"
+                tag={null}
+                tasks={groupedTasks.default}
+                onDelete={handleDeleteTask}
+                onEdit={handleEditTask}
+                onComplete={handleCompleteTask}
+                onPlay={handlePlayTask}
+              />
+            )}
+          </View>
+        )}
+
+        {/* Empty state */}
+        {activeTasks.length === 0 && (
+          <View style={s.emptyWrap}>
+            <Ionicons name="calendar-outline" size={40} color={colors.border} />
+            <Text style={[s.emptyText, { color: colors.textSecondary }]}>
+              No tasks for today
+            </Text>
+            <Text style={[s.emptyHint, { color: colors.textSecondary }]}>
+              Tap the button below to add your first task
+            </Text>
+          </View>
+        )}
+
+        {/* Completed tasks */}
+        {completedTasks.length > 0 && (
+          <View style={[s.section, { marginTop: 8 }]}>
+            <Text style={[s.sectionLabel, { color: colors.textSecondary }]}>
+              Completed · {completedTasks.length}
+            </Text>
+            {completedTasks.map((task) => (
               <View
                 key={task.id}
-                className="flex-row items-center bg-white dark:bg-gray-800 rounded-2xl py-3.5 px-4 mb-3 shadow-sm"
+                style={[
+                  s.completedCard,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                  },
+                ]}
               >
-                <Ionicons name="checkmark-circle" size={24} color="#22C55E" />
-                <Text className="flex-1 text-base font-SoraSemiBold text-text-primary ml-3 line-through">
+                <Ionicons
+                  name="checkmark-circle"
+                  size={18}
+                  color={colors.accent}
+                />
+                <Text
+                  style={[s.completedName, { color: colors.textSecondary }]}
+                  numberOfLines={1}
+                >
                   {task.name}
                 </Text>
                 <TouchableOpacity
-                  className="ml-3 p-1.5 rounded-full"
-                  onPress={() => handleRemoveCompleted(task)}
-                  accessibilityLabel="Remove completed task"
+                  onPress={() => deleteTask(task.id)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Ionicons name="trash" size={20} color="#EF4444" />
+                  <Ionicons
+                    name="close"
+                    size={16}
+                    color={colors.textSecondary}
+                  />
                 </TouchableOpacity>
               </View>
-            ))
-          )}
-        </View>
+            ))}
+          </View>
+        )}
       </ScrollView>
 
-      {/* Absolutely positioned Add Task button above tab bar */}
-      <View className="absolute bottom-32 left-0 right-0 px-6">
-        <TouchableOpacity
-          className="w-full bg-blue-600 rounded-xl py-4 flex-row items-center justify-center shadow-lg"
-          onPress={() => setAddModalVisible(true)}
-          activeOpacity={0.92}
-          style={{
-            shadowColor: "#3B82F6",
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3,
-            shadowRadius: 8,
-            elevation: 8,
-          }}
-        >
-          <Ionicons name="add" size={22} color="#fff" />
-          <Text className="text-white font-SoraSemiBold text-base ml-2">
-            Add Task
-          </Text>
-        </TouchableOpacity>
-      </View>
+      {/* FAB */}
+      <TouchableOpacity
+        style={[
+          s.fab,
+          { backgroundColor: colors.accent, shadowColor: colors.accent },
+        ]}
+        onPress={() => setAddModalVisible(true)}
+        activeOpacity={0.88}
+      >
+        <Ionicons name="add" size={20} color="#fff" />
+        <Text style={s.fabText}>Add Task</Text>
+      </TouchableOpacity>
 
       <AddTaskModal
         isVisible={addModalVisible}
@@ -289,11 +361,109 @@ export default function Plan() {
       />
       <TaskSwitchWarningModal
         isVisible={warningModalVisible}
-        currentTaskName={getCurrentTask()?.name || ""}
-        newTaskName={pendingTaskSwitch?.name || ""}
+        currentTaskName={getCurrentTask()?.name ?? ""}
+        newTaskName={pendingTaskSwitch?.name ?? ""}
         onConfirm={handleConfirmTaskSwitch}
         onCancel={handleCancelTaskSwitch}
       />
     </View>
   );
 }
+
+const s = StyleSheet.create({
+  screen: { flex: 1 },
+  scrollContent: { paddingBottom: 180 },
+  header: { paddingHorizontal: 24, paddingTop: 56, paddingBottom: 16 },
+  title: { fontSize: 24, fontFamily: "SoraBold", letterSpacing: -0.3 },
+  subtitle: { fontSize: 14, fontFamily: "Sora", marginTop: 4 },
+  section: { paddingHorizontal: 20, marginBottom: 8 },
+  sectionLabel: {
+    fontSize: 11,
+    fontFamily: "SoraSemiBold",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: 10,
+  },
+  // Pinned card
+  pinnedCard: {
+    borderRadius: 18,
+    borderWidth: 1.5,
+    padding: 16,
+    marginBottom: 20,
+  },
+  pinnedRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  pinnedDot: { width: 8, height: 8, borderRadius: 4 },
+  pinnedName: { flex: 1, fontSize: 16, fontFamily: "SoraSemiBold" },
+  pinnedMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 12,
+  },
+  activeBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
+  activeBadgeText: { fontSize: 11, fontFamily: "SoraSemiBold" },
+  focusBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  focusBtnText: { fontSize: 12, fontFamily: "SoraBold", color: "#fff" },
+  // Empty
+  emptyWrap: {
+    alignItems: "center",
+    paddingVertical: 48,
+    paddingHorizontal: 32,
+  },
+  emptyText: {
+    fontSize: 15,
+    fontFamily: "SoraSemiBold",
+    textAlign: "center",
+    marginTop: 12,
+  },
+  emptyHint: {
+    fontSize: 13,
+    fontFamily: "Sora",
+    textAlign: "center",
+    marginTop: 6,
+    opacity: 0.7,
+  },
+  // Completed
+  completedCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 8,
+    opacity: 0.65,
+    gap: 10,
+  },
+  completedName: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: "SoraSemiBold",
+    textDecorationLine: "line-through",
+  },
+  // FAB
+  fab: {
+    position: "absolute",
+    bottom: 110,
+    left: 24,
+    right: 24,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 28,
+    paddingVertical: 16,
+    gap: 8,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  fabText: { fontSize: 15, fontFamily: "SoraBold", color: "#fff" },
+});

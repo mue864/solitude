@@ -73,7 +73,7 @@ export interface SettingsState {
   addNotificationSchedule: (schedule: ProNotificationSchedule) => void;
   updateNotificationSchedule: (
     id: string,
-    schedule: Partial<ProNotificationSchedule>
+    schedule: Partial<ProNotificationSchedule>,
   ) => void;
   removeNotificationSchedule: (id: string) => void;
   addCustomTheme: (theme: CustomTheme) => void;
@@ -104,7 +104,7 @@ const defaultSettings = {
     weeklySummary: false,
     streakReminder: true,
   },
-  theme: "auto" as const,
+  theme: "dark" as const,
   soundEnabled: true,
   vibrationEnabled: true,
   proFeatures: {
@@ -210,7 +210,7 @@ export const useSettingsStore = create<SettingsState>()(
           proFeatures: {
             ...state.proFeatures,
             customDurations: state.proFeatures.customDurations.filter(
-              (d) => d !== duration
+              (d) => d !== duration,
             ),
           },
         }));
@@ -231,14 +231,14 @@ export const useSettingsStore = create<SettingsState>()(
 
       updateNotificationSchedule: (
         id: string,
-        schedule: Partial<ProNotificationSchedule>
+        schedule: Partial<ProNotificationSchedule>,
       ) => {
         if (!get().isPro) return;
         set((state) => ({
           proFeatures: {
             ...state.proFeatures,
             notificationSchedules: state.proFeatures.notificationSchedules.map(
-              (s) => (s.id === id ? { ...s, ...schedule } : s)
+              (s) => (s.id === id ? { ...s, ...schedule } : s),
             ),
           },
         }));
@@ -251,7 +251,7 @@ export const useSettingsStore = create<SettingsState>()(
             ...state.proFeatures,
             notificationSchedules:
               state.proFeatures.notificationSchedules.filter(
-                (s) => s.id !== id
+                (s) => s.id !== id,
               ),
           },
         }));
@@ -273,7 +273,7 @@ export const useSettingsStore = create<SettingsState>()(
           proFeatures: {
             ...state.proFeatures,
             customThemes: state.proFeatures.customThemes.map((t) =>
-              t.id === id ? { ...t, ...theme } : t
+              t.id === id ? { ...t, ...theme } : t,
             ),
           },
         }));
@@ -285,7 +285,7 @@ export const useSettingsStore = create<SettingsState>()(
           proFeatures: {
             ...state.proFeatures,
             customThemes: state.proFeatures.customThemes.filter(
-              (t) => t.id !== id
+              (t) => t.id !== id,
             ),
           },
         }));
@@ -436,8 +436,8 @@ export const useSettingsStore = create<SettingsState>()(
           await AsyncStorage.removeItem(name);
         },
       },
-    }
-  )
+    },
+  ),
 );
 
 // Helper functions

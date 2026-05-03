@@ -1,7 +1,8 @@
+import BottomSheet from "@/components/BottomSheet";
+import { useTheme } from "@/context/ThemeContext";
 import React, { useState } from "react";
 import {
-  Modal,
-  Pressable,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -19,6 +20,7 @@ export default function AddJournalModal({
   onAdd,
   onClose,
 }: AddJournalModalProps) {
+  const { colors } = useTheme();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
 
@@ -37,60 +39,92 @@ export default function AddJournalModal({
   };
 
   return (
-    <Modal
-      visible={isVisible}
-      transparent
-      animationType="fade"
-      onRequestClose={handleClose}
+    <BottomSheet
+      isVisible={isVisible}
+      onClose={handleClose}
+      title="Reflect on your session"
     >
-      <Pressable
-        className="flex-1 bg-black/30 justify-center items-center"
-        onPress={handleClose}
-      >
-        <Pressable
-          className="w-11/12 max-w-md bg-white dark:bg-gray-900 rounded-2xl p-6"
-          onPress={(e) => e.stopPropagation()}
+      <TextInput
+        style={[
+          styles.input,
+          {
+            backgroundColor: colors.surfaceMuted,
+            borderColor: colors.border,
+            color: colors.textPrimary,
+          },
+        ]}
+        placeholder="Title..."
+        placeholderTextColor={colors.textSecondary}
+        value={title}
+        onChangeText={setTitle}
+        maxLength={60}
+        autoFocus
+      />
+      <TextInput
+        style={[
+          styles.input,
+          styles.textarea,
+          {
+            backgroundColor: colors.surfaceMuted,
+            borderColor: colors.border,
+            color: colors.textPrimary,
+          },
+        ]}
+        placeholder="Write your thoughts, feelings, or what you accomplished..."
+        placeholderTextColor={colors.textSecondary}
+        value={content}
+        onChangeText={setContent}
+        multiline
+        maxLength={500}
+        textAlignVertical="top"
+      />
+      <View style={styles.row}>
+        <TouchableOpacity
+          onPress={handleClose}
+          style={[
+            styles.btn,
+            {
+              backgroundColor: colors.surfaceMuted,
+              borderColor: colors.border,
+              borderWidth: 1,
+            },
+          ]}
         >
-          <Text className="text-lg font-SoraSemiBold text-text-primary mb-4">
-            Reflect on your session
+          <Text style={[styles.btnText, { color: colors.textSecondary }]}>
+            Cancel
           </Text>
-          <TextInput
-            className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 mb-3 text-base text-text-primary bg-gray-50 dark:bg-gray-800 font-SoraSemiBold"
-            placeholder="Title..."
-            placeholderTextColor="#94A3B8"
-            value={title}
-            onChangeText={setTitle}
-            maxLength={60}
-            autoFocus
-          />
-          <TextInput
-            className="w-full border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 mb-4 text-base text-text-primary bg-gray-50 dark:bg-gray-800 font-SoraSemiBold min-h-[80px]"
-            placeholder="Write your thoughts, feelings, or what you accomplished..."
-            placeholderTextColor="#94A3B8"
-            value={content}
-            onChangeText={setContent}
-            multiline
-            maxLength={500}
-          />
-          <View className="flex-row justify-end gap-3 mt-2">
-            <TouchableOpacity
-              className="px-4 py-2 rounded-xl bg-gray-100 dark:bg-gray-800"
-              onPress={handleClose}
-            >
-              <Text className="text-text-secondary font-SoraSemiBold">
-                Cancel
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              className={`px-4 py-2 rounded-xl ${title.trim() && content.trim() ? "bg-blue-600" : "bg-blue-300"}`}
-              onPress={handleAdd}
-              disabled={!title.trim() || !content.trim()}
-            >
-              <Text className="text-white font-SoraSemiBold">Save</Text>
-            </TouchableOpacity>
-          </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={handleAdd}
+          disabled={!title.trim() || !content.trim()}
+          style={[
+            styles.btn,
+            {
+              backgroundColor: colors.accent,
+              opacity: !title.trim() || !content.trim() ? 0.45 : 1,
+            },
+          ]}
+        >
+          <Text style={[styles.btnText, { color: "#fff" }]}>Save</Text>
+        </TouchableOpacity>
+      </View>
+    </BottomSheet>
   );
 }
+
+const styles = StyleSheet.create({
+  input: {
+    width: "100%",
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 12,
+    fontSize: 14,
+    fontFamily: "Sora",
+  },
+  textarea: { minHeight: 96 },
+  row: { flexDirection: "row", gap: 10, marginTop: 4 },
+  btn: { flex: 1, paddingVertical: 13, borderRadius: 14, alignItems: "center" },
+  btnText: { fontSize: 14, fontFamily: "SoraSemiBold" },
+});

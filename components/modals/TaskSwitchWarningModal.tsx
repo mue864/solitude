@@ -1,5 +1,14 @@
+import { useTheme } from "@/context/ThemeContext";
+import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { Modal, Pressable, Text, TouchableOpacity, View } from "react-native";
+import {
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 interface TaskSwitchWarningModalProps {
   isVisible: boolean;
@@ -16,6 +25,8 @@ export default function TaskSwitchWarningModal({
   onConfirm,
   onCancel,
 }: TaskSwitchWarningModalProps) {
+  const { colors } = useTheme();
+
   return (
     <Modal
       visible={isVisible}
@@ -23,54 +34,60 @@ export default function TaskSwitchWarningModal({
       animationType="fade"
       onRequestClose={onCancel}
     >
-      <Pressable
-        className="flex-1 bg-black/50 justify-center items-center"
-        onPress={onCancel}
-      >
+      <Pressable style={s.overlay} onPress={onCancel}>
         <Pressable
-          className="w-11/12 max-w-md bg-white dark:bg-gray-900 rounded-2xl p-6"
+          style={[
+            s.sheet,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
           onPress={(e) => e.stopPropagation()}
         >
-          <View className="items-center mb-4">
-            <View className="w-12 h-12 bg-amber-100 dark:bg-amber-900/30 rounded-full items-center justify-center mb-3">
-              <Text className="text-amber-600 dark:text-amber-400 text-2xl">
-                ⚠️
-              </Text>
-            </View>
-            <Text className="text-lg font-SoraSemiBold text-text-primary text-center">
-              Task in Progress
-            </Text>
+          <View style={[s.iconWrap, { backgroundColor: colors.accentMuted }]}>
+            <Ionicons name="swap-horizontal" size={22} color={colors.accent} />
           </View>
 
-          <Text className="text-text-secondary text-center mb-6 leading-6">
-            You're currently working on{" "}
-            <Text className="font-SoraSemiBold text-text-primary">
+          <Text style={[s.title, { color: colors.textPrimary }]}>
+            Switch Task?
+          </Text>
+
+          <Text style={[s.body, { color: colors.textSecondary }]}>
+            You're currently focused on{" "}
+            <Text
+              style={{ color: colors.textPrimary, fontFamily: "SoraSemiBold" }}
+            >
               "{currentTaskName}"
             </Text>
             .{"\n\n"}
-            Starting{" "}
-            <Text className="font-SoraSemiBold text-text-primary">
+            Switching to{" "}
+            <Text
+              style={{ color: colors.textPrimary, fontFamily: "SoraSemiBold" }}
+            >
               "{newTaskName}"
             </Text>{" "}
             will end your current session.
           </Text>
 
-          <View className="flex-row gap-3">
+          <View style={s.row}>
             <TouchableOpacity
-              className="flex-1 px-4 py-3 rounded-xl bg-gray-100 dark:bg-gray-800"
+              style={[
+                s.btn,
+                {
+                  backgroundColor: colors.surfaceMuted,
+                  borderColor: colors.border,
+                  borderWidth: 1,
+                },
+              ]}
               onPress={onCancel}
             >
-              <Text className="text-text-secondary font-SoraSemiBold text-center">
-                Cancel
+              <Text style={[s.btnText, { color: colors.textSecondary }]}>
+                Keep going
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              className="flex-1 px-4 py-3 rounded-xl bg-blue-600"
+              style={[s.btn, { backgroundColor: colors.accent }]}
               onPress={onConfirm}
             >
-              <Text className="text-white font-SoraSemiBold text-center">
-                Switch Tasks
-              </Text>
+              <Text style={[s.btnText, { color: "#fff" }]}>Switch</Text>
             </TouchableOpacity>
           </View>
         </Pressable>
@@ -78,3 +95,39 @@ export default function TaskSwitchWarningModal({
     </Modal>
   );
 }
+
+const s = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  sheet: {
+    width: "88%",
+    maxWidth: 380,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 24,
+    alignItems: "center",
+  },
+  iconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14,
+  },
+  title: { fontSize: 18, fontFamily: "SoraBold", marginBottom: 10 },
+  body: {
+    fontSize: 14,
+    fontFamily: "Sora",
+    lineHeight: 22,
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  row: { flexDirection: "row", gap: 10, width: "100%" },
+  btn: { flex: 1, paddingVertical: 13, borderRadius: 14, alignItems: "center" },
+  btnText: { fontSize: 14, fontFamily: "SoraSemiBold" },
+});

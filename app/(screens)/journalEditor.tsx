@@ -1,3 +1,4 @@
+import { useTheme } from "@/context/ThemeContext";
 import { Ionicons } from "@expo/vector-icons";
 import { format, parseISO } from "date-fns";
 import { Audio } from "expo-av";
@@ -17,8 +18,8 @@ import {
   KeyboardAvoidingView,
   LayoutAnimation,
   Platform,
-  Animated as RNAnimated,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -27,6 +28,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DraggableBlock from "../../components/DraggableBlock";
 import { JournalBlock, useJournalStore } from "../../store/journalStore";
+
+// ─── Utilities ──────────────────────────────────────────────
 
 function createEmptyBlock(type: JournalBlock["type"]): JournalBlock {
   switch (type) {
@@ -49,6 +52,11 @@ function createEmptyBlock(type: JournalBlock["type"]): JournalBlock {
   }
 }
 
+const formatSecs = (s: number) =>
+  `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+
+// ─── AudioBlock ─────────────────────────────────────────────
+
 function AudioBlock({
   block,
   idx,
@@ -58,29 +66,29 @@ function AudioBlock({
 }: {
   block: JournalBlock;
   idx: number;
-  onUpdate: (block: JournalBlock) => void;
+  onUpdate: (b: JournalBlock) => void;
   isRecording: boolean;
-  setRecordingIdx: (idx: number | null) => void;
+  setRecordingIdx: (i: number | null) => void;
 }) {
+  const { colors } = useTheme();
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [playbackPosition, setPlaybackPosition] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [audioDuration, setAudioDuration] = useState(0);
   const [audioTitle, setAudioTitle] = useState((block as any).title || "");
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const waveAnim = useRef(new Animated.Value(0)).current;
-  const recordingTimer = useRef<NodeJS.Timeout | null>(null);
+  const recordingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (isRecording) {
-      // Start pulse animation
       const pulseLoop = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
-            toValue: 1.2,
+            toValue: 1.3,
             duration: 600,
             useNativeDriver: true,
           }),
@@ -89,200 +97,138 @@ function AudioBlock({
             duration: 600,
             useNativeDriver: true,
           }),
-        ])
+        ]),
       );
-      pulseLoop.start();
-
-      // Start wave animation
       const waveLoop = Animated.loop(
         Animated.timing(waveAnim, {
           toValue: 1,
           duration: 1000,
           useNativeDriver: true,
-        })
+        }),
       );
+      pulseLoop.start();
       waveLoop.start();
-
-      // Start recording timer
-      recordingTimer.current = setInterval(() => {
-        setRecordingTime((prev) => prev + 1);
-      }, 1000);
-
+      recordingTimer.current = setInterval(
+        () => setRecordingTime((p) => p + 1),
+        1000,
+      );
       return () => {
         pulseLoop.stop();
         waveLoop.stop();
-        if (recordingTimer.current) {
-          clearInterval(recordingTimer.current);
-        }
+        if (recordingTimer.current) clearInterval(recordingTimer.current);
       };
     }
   }, [isRecording]);
 
   useEffect(() => {
     return () => {
-      // Cleanup function
-      if (sound) {
-        sound.unloadAsync();
-      }
-      if (recording) {
-        try {
-          recording.stopAndUnloadAsync();
-        } catch (error) {
-          console.log("Cleanup: Recording already stopped or invalid");
-        }
-      }
-      if (recordingTimer.current) {
-        clearInterval(recordingTimer.current);
-      }
+      sound?.unloadAsync();
+      try {
+        recording?.stopAndUnloadAsync();
+      } catch {}
+      if (recordingTimer.current) clearInterval(recordingTimer.current);
     };
   }, [sound, recording]);
 
   if (block.type !== "audio") return null;
 
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
-
-  const handleStop = async () => {
-    if (!recording) {
-      console.log("No active recording found");
-      setRecordingIdx(null);
-      return;
-    }
-
-    // Start cleanup immediately to improve perceived performance
-    if (recordingTimer.current) {
-      clearInterval(recordingTimer.current);
-      recordingTimer.current = null;
-    }
-
-    // Update UI state immediately
-    setRecordingIdx(null);
-    const finalRecordingTime = recordingTime;
-    setRecordingTime(0);
-
-    try {
-      let recordingUri = null;
-
-      // Get recording status and URI
-      try {
-        const status = await recording.getStatusAsync();
-        if (status.isRecording) {
-          await recording.stopAndUnloadAsync();
-        }
-        recordingUri = recording.getURI();
-      } catch (error) {
-        console.error("Error stopping recording:", error);
-        // Try to get URI even if stop failed
-        recordingUri = recording.getURI();
-      }
-
-      if (recordingUri) {
-        onUpdate({
-          type: "audio",
-          uri: recordingUri,
-          duration: finalRecordingTime,
-          title: audioTitle || `Recording ${new Date().toLocaleTimeString()}`,
-        });
-      } else {
-        throw new Error("No recording URI available");
-      }
-    } catch (error) {
-      console.error("Failed to save recording", error);
-      Alert.alert(
-        "Recording Error",
-        "There was an issue saving the recording. Please try again."
-      );
-    } finally {
-      // Cleanup recording object
-      setRecording(null);
-    }
-  };
-
   const handleRecord = async () => {
-    // Prevent multiple recordings
-    if (isRecording || recording) {
-      console.log("Recording already in progress");
-      return;
-    }
-
+    if (isRecording || recording) return;
     try {
-      const permission = await Audio.requestPermissionsAsync();
-      if (permission.status !== "granted") {
+      const { status } = await Audio.requestPermissionsAsync();
+      if (status !== "granted") {
         Alert.alert(
           "Permission Required",
-          "Please grant microphone permission to record audio."
+          "Please grant microphone access to record.",
         );
         return;
       }
-
-      // Ensure audio mode is set correctly
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
         staysActiveInBackground: true,
       });
-
-      // Create and prepare recording
-      const { recording: newRecording } = await Audio.Recording.createAsync(
+      const { recording: rec } = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY,
-        (status) => {
-          if (status.isRecording) {
-            setRecordingTime(
-              status.durationMillis
-                ? Math.floor(status.durationMillis / 1000)
-                : 0
-            );
-          }
-        },
-        100
+        (s) =>
+          s.isRecording &&
+          setRecordingTime(
+            s.durationMillis ? Math.floor(s.durationMillis / 1000) : 0,
+          ),
+        100,
       );
-
-      setRecording(newRecording);
+      setRecording(rec);
       setRecordingIdx(idx);
       setRecordingTime(0);
-    } catch (err) {
-      console.error("Failed to start recording", err);
-      Alert.alert(
-        "Recording Error",
-        "Failed to start recording. Please try again."
-      );
-      // Clean up any partial recording state
+    } catch {
+      Alert.alert("Error", "Failed to start recording.");
       setRecording(null);
       setRecordingIdx(null);
-      setRecordingTime(0);
+    }
+  };
+
+  const handleStop = async () => {
+    if (!recording) {
+      setRecordingIdx(null);
+      return;
+    }
+    if (recordingTimer.current) {
+      clearInterval(recordingTimer.current);
+      recordingTimer.current = null;
+    }
+    setRecordingIdx(null);
+    const finalTime = recordingTime;
+    setRecordingTime(0);
+    try {
+      let uri: string | null = null;
+      try {
+        const st = await recording.getStatusAsync();
+        if (st.isRecording) await recording.stopAndUnloadAsync();
+        uri = recording.getURI();
+      } catch {
+        uri = recording.getURI();
+      }
+      if (uri) {
+        onUpdate({
+          type: "audio",
+          uri,
+          duration: finalTime,
+          title: audioTitle || `Recording ${new Date().toLocaleTimeString()}`,
+        });
+      } else throw new Error("No URI");
+    } catch {
+      Alert.alert(
+        "Recording Error",
+        "Failed to save recording. Please try again.",
+      );
+    } finally {
+      setRecording(null);
     }
   };
 
   const handlePlayPause = async () => {
     if (!sound && (block as any).uri) {
       try {
-        const { sound: newSound } = await Audio.Sound.createAsync(
+        const { sound: s } = await Audio.Sound.createAsync(
           { uri: (block as any).uri },
-          { shouldPlay: true }
+          { shouldPlay: true },
         );
-        setSound(newSound);
+        setSound(s);
         setIsPlaying(true);
-
-        newSound.setOnPlaybackStatusUpdate((status) => {
-          if (status.isLoaded) {
+        s.setOnPlaybackStatusUpdate((st) => {
+          if (st.isLoaded) {
             setPlaybackPosition(
-              status.positionMillis ? status.positionMillis / 1000 : 0
+              st.positionMillis ? st.positionMillis / 1000 : 0,
             );
-            setDuration(
-              status.durationMillis ? status.durationMillis / 1000 : 0
-            );
-            if (status.didJustFinish) {
+            setAudioDuration(st.durationMillis ? st.durationMillis / 1000 : 0);
+            if (st.didJustFinish) {
               setIsPlaying(false);
               setPlaybackPosition(0);
             }
           }
         });
-      } catch (error) {
-        console.error("Failed to play audio", error);
-        Alert.alert("Error", "Failed to play audio");
+      } catch {
+        Alert.alert("Error", "Failed to play audio.");
       }
     } else if (sound) {
       if (isPlaying) {
@@ -295,158 +241,196 @@ function AudioBlock({
     }
   };
 
-  const handleDelete = async () => {
-    Alert.alert(
-      "Delete Recording",
-      "Are you sure you want to delete this recording?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            if (sound) {
-              await sound.unloadAsync();
-            }
-            onUpdate({ type: "audio", uri: "", duration: 0, title: "" });
-          },
+  const handleDelete = () =>
+    Alert.alert("Delete Recording", "Remove this recording?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          if (sound) await sound.unloadAsync();
+          onUpdate({ type: "audio", uri: "", duration: 0, title: "" });
         },
-      ]
-    );
-  };
+      },
+    ]);
+
+  const progressPct =
+    audioDuration > 0 ? (playbackPosition / audioDuration) * 100 : 0;
 
   return (
-    <View className="mb-6 mx-2">
-      <View className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-lg border border-gray-100 dark:border-gray-700">
-        {/* Audio Title Input */}
-        <TextInput
-          className="text-base font-medium text-gray-800 dark:text-gray-200 mb-3 px-2 py-1 border-b border-gray-200 dark:border-gray-600"
-          placeholder="Recording title (optional)"
-          value={audioTitle}
-          onChangeText={setAudioTitle}
-          onEndEditing={() => {
-            if ((block as any).uri) {
-              onUpdate({
-                ...(block as any),
-                title:
-                  audioTitle || `Recording ${new Date().toLocaleTimeString()}`,
-              });
-            }
-          }}
-        />
+    <View
+      style={[
+        es.blockCard,
+        { backgroundColor: colors.surface, borderColor: colors.border },
+      ]}
+    >
+      <TextInput
+        style={[
+          es.audioTitleInput,
+          { color: colors.textPrimary, borderBottomColor: colors.border },
+        ]}
+        placeholder="Recording title (optional)"
+        placeholderTextColor={colors.textSecondary}
+        value={audioTitle}
+        onChangeText={setAudioTitle}
+        onEndEditing={() => {
+          if ((block as any).uri) {
+            onUpdate({
+              ...(block as any),
+              title:
+                audioTitle || `Recording ${new Date().toLocaleTimeString()}`,
+            });
+          }
+        }}
+      />
 
-        {(block as any).uri ? (
-          // Playback UI
-          <View className="space-y-4">
-            <View className="flex-row items-center justify-between">
-              <View className="flex-1 mr-4">
-                <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  {(block as any).title || "Recording"}
-                </Text>
-                <View className="bg-gray-200 dark:bg-gray-600 rounded-full h-1.5">
-                  <View
-                    className="bg-blue-500 h-1.5 rounded-full"
-                    style={{
-                      width: `${duration > 0 ? (playbackPosition / duration) * 100 : 0}%`,
-                    }}
-                  />
-                </View>
-                <View className="flex-row justify-between mt-1">
-                  <Text className="text-xs text-gray-500 dark:text-gray-400">
-                    {formatTime(Math.floor(playbackPosition))}
-                  </Text>
-                  <Text className="text-xs text-gray-500 dark:text-gray-400">
-                    {formatTime(
-                      Math.floor(duration || (block as any).duration || 0)
-                    )}
-                  </Text>
-                </View>
-              </View>
-              <View className="flex-row items-center gap-2">
-                <TouchableOpacity
-                  className="w-10 h-10 rounded-full bg-blue-500/10 items-center justify-center"
-                  onPress={handlePlayPause}
-                >
-                  <Ionicons
-                    name={isPlaying ? "pause" : "play"}
-                    size={20}
-                    color="#3B82F6"
-                  />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  className="w-10 h-10 rounded-full bg-red-500/10 items-center justify-center"
-                  onPress={handleDelete}
-                >
-                  <Ionicons name="trash-outline" size={20} color="#EF4444" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        ) : isRecording ? (
-          // Recording UI - More minimal and modern
-          <View className="items-center py-2">
-            {/* Recording indicator and timer */}
-            <View className="flex-row items-center gap-4 mb-4">
-              <Animated.View
-                style={{
-                  transform: [{ scale: pulseAnim }],
-                }}
-                className="w-3 h-3 rounded-full bg-red-500"
+      {(block as any).uri ? (
+        // ── Playback UI ──
+        <View style={es.audioPlaybackRow}>
+          <View style={{ flex: 1, marginRight: 12 }}>
+            <Text
+              style={[es.audioRecordingName, { color: colors.textSecondary }]}
+            >
+              {(block as any).title || "Recording"}
+            </Text>
+            <View
+              style={[
+                es.progressTrack,
+                { backgroundColor: colors.surfaceMuted },
+              ]}
+            >
+              <View
+                style={[
+                  es.progressFill,
+                  {
+                    backgroundColor: colors.accent,
+                    width: `${progressPct}%` as any,
+                  },
+                ]}
               />
-              <Text className="text-xl font-mono text-gray-700 dark:text-gray-300">
-                {formatTime(recordingTime)}
+            </View>
+            <View style={es.progressTimes}>
+              <Text style={[es.audioTimeText, { color: colors.textSecondary }]}>
+                {formatSecs(Math.floor(playbackPosition))}
+              </Text>
+              <Text style={[es.audioTimeText, { color: colors.textSecondary }]}>
+                {formatSecs(
+                  Math.floor(audioDuration || (block as any).duration || 0),
+                )}
               </Text>
             </View>
-
-            {/* Waveform visualization - More subtle */}
-            <View className="flex-row items-center justify-center gap-1 h-12 mb-4">
-              {[...Array(8)].map((_, i) => (
-                <Animated.View
-                  key={i}
-                  className="w-1 bg-red-400/50 dark:bg-red-500/50 rounded-full"
-                  style={{
+          </View>
+          <View style={es.audioControls}>
+            <TouchableOpacity
+              style={[es.audioBtn, { backgroundColor: colors.accentMuted }]}
+              onPress={handlePlayPause}
+            >
+              <Ionicons
+                name={isPlaying ? "pause" : "play"}
+                size={18}
+                color={colors.accent}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[es.audioBtn, { backgroundColor: "rgba(224,90,90,0.12)" }]}
+              onPress={handleDelete}
+            >
+              <Ionicons
+                name="trash-outline"
+                size={18}
+                color={colors.destructive}
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : isRecording ? (
+        // ── Recording UI ──
+        <View style={es.recordingContainer}>
+          <View style={es.recordingIndicator}>
+            <Animated.View
+              style={[es.recordingDot, { transform: [{ scale: pulseAnim }] }]}
+            />
+            <Text
+              style={[
+                es.recordingTimer,
+                { color: colors.textPrimary, fontFamily: "SoraBold" },
+              ]}
+            >
+              {formatSecs(recordingTime)}
+            </Text>
+          </View>
+          <View style={es.waveContainer}>
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Animated.View
+                key={i}
+                style={[
+                  es.waveBar,
+                  { backgroundColor: colors.destructive + "99" },
+                  {
                     transform: [
                       {
                         scaleY: waveAnim.interpolate({
                           inputRange: [0, 1],
-                          outputRange: [0.2, Math.random() * 0.8 + 0.2],
+                          outputRange: [0.2, 0.2 + ((i * 7) % 5) * 0.16],
                         }),
                       },
                     ],
-                    height: 32,
-                  }}
-                />
-              ))}
-            </View>
-
-            {/* Stop button - More minimal */}
-            <TouchableOpacity
-              className="bg-red-500/10 rounded-xl px-6 py-2.5"
-              onPress={handleStop}
-            >
-              <Text className="text-red-500 font-medium">Stop Recording</Text>
-            </TouchableOpacity>
+                  },
+                ]}
+              />
+            ))}
           </View>
-        ) : (
-          // Initial state - More minimal
-          <View className="items-center py-6">
-            <TouchableOpacity
-              className="w-14 h-14 bg-blue-500/10 rounded-full items-center justify-center mb-3"
-              onPress={handleRecord}
+          <TouchableOpacity
+            style={[es.stopBtn, { backgroundColor: "rgba(224,90,90,0.12)" }]}
+            onPress={handleStop}
+          >
+            <Text
+              style={[
+                es.stopBtnText,
+                { color: colors.destructive, fontFamily: "SoraSemiBold" },
+              ]}
             >
-              <Ionicons name="mic-outline" size={24} color="#3B82F6" />
-            </TouchableOpacity>
-            <Text className="text-gray-500 dark:text-gray-400 text-sm">
-              Tap to record
+              Stop Recording
             </Text>
-          </View>
-        )}
-      </View>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        // ── Idle ──
+        <View style={es.recordIdle}>
+          <TouchableOpacity
+            style={[es.micBtn, { backgroundColor: colors.accentMuted }]}
+            onPress={handleRecord}
+          >
+            <Ionicons name="mic-outline" size={24} color={colors.accent} />
+          </TouchableOpacity>
+          <Text
+            style={[
+              es.micHint,
+              { color: colors.textSecondary, fontFamily: "Sora" },
+            ]}
+          >
+            Tap to record
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
 
-// Floating Add Block Menu as a memoized component
+// ─── Add Block Menu ──────────────────────────────────────────
+
+const BLOCK_TYPES: {
+  type: JournalBlock["type"];
+  icon: string;
+  label: string;
+}[] = [
+  { type: "text", icon: "document-text-outline", label: "Text" },
+  { type: "checkbox", icon: "checkbox-outline", label: "Checklist" },
+  { type: "list", icon: "list-outline", label: "List" },
+  { type: "image", icon: "image-outline", label: "Image" },
+  { type: "audio", icon: "mic-outline", label: "Recording" },
+];
+
 const AddBlockMenu = React.memo(function AddBlockMenu({
   visible,
   onAdd,
@@ -456,71 +440,62 @@ const AddBlockMenu = React.memo(function AddBlockMenu({
   onAdd: (type: JournalBlock["type"]) => void;
   menuAnimation: Animated.Value;
 }) {
-  const menuItems = [
-    {
-      type: "text",
-      icon: <Ionicons name="document-text-outline" size={20} color="#3B82F6" />,
-      label: "Text",
-    },
-    {
-      type: "checkbox",
-      icon: <Ionicons name="checkbox-outline" size={20} color="#10B981" />,
-      label: "Checklist",
-    },
-    {
-      type: "list",
-      icon: <Ionicons name="list-outline" size={20} color="#F59E0B" />,
-      label: "List",
-    },
-    {
-      type: "image",
-      icon: <Ionicons name="image-outline" size={20} color="#8B5CF6" />,
-      label: "Image",
-    },
-    {
-      type: "audio",
-      icon: <Ionicons name="mic-outline" size={20} color="#EF4444" />,
-      label: "Recording",
-    },
-  ];
+  const { colors } = useTheme();
+  if (!visible) return null;
+
   return (
     <Animated.View
-      style={{
-        opacity: menuAnimation,
-        transform: [
-          {
-            translateY: menuAnimation.interpolate({
-              inputRange: [0, 1],
-              outputRange: [20, 0],
-            }),
-          },
-        ],
-      }}
-      className="mb-4"
+      style={[
+        es.addMenu,
+        { backgroundColor: colors.surface, borderColor: colors.border },
+        {
+          opacity: menuAnimation,
+          transform: [
+            {
+              translateY: menuAnimation.interpolate({
+                inputRange: [0, 1],
+                outputRange: [16, 0],
+              }),
+            },
+          ],
+        },
+      ]}
     >
-      {visible && (
-        <View className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden min-w-[180px]">
-          {menuItems.map((item, i) => (
-            <TouchableOpacity
-              key={item.type}
-              onPress={() => onAdd(item.type as JournalBlock["type"])}
-              className="flex-row items-center p-4 border-b border-gray-100 dark:border-gray-700 last:border-b-0 gap-3"
-            >
-              <View className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-700 items-center justify-center mr-2">
-                {item.icon}
-              </View>
-              <Text className="text-gray-800 dark:text-gray-200 font-medium">
-                {item.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
+      {BLOCK_TYPES.map((item, i) => (
+        <TouchableOpacity
+          key={item.type}
+          onPress={() => onAdd(item.type)}
+          style={[
+            es.addMenuItem,
+            i < BLOCK_TYPES.length - 1 && {
+              borderBottomWidth: 1,
+              borderBottomColor: colors.border,
+            },
+          ]}
+        >
+          <View
+            style={[es.addMenuIcon, { backgroundColor: colors.surfaceMuted }]}
+          >
+            <Ionicons name={item.icon as any} size={18} color={colors.accent} />
+          </View>
+          <Text
+            style={[
+              es.addMenuLabel,
+              { color: colors.textPrimary, fontFamily: "SoraSemiBold" },
+            ]}
+          >
+            {item.label}
+          </Text>
+        </TouchableOpacity>
+      ))}
     </Animated.View>
   );
 });
 
+// ─── JournalEditor ───────────────────────────────────────────
+
 export default function JournalEditor() {
+  const { colors } = useTheme();
   const scrollRef = useRef<ScrollView>(null);
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -533,84 +508,84 @@ export default function JournalEditor() {
 
   const [title, setTitle] = useState(entry?.title || "");
   const [blocks, setBlocks] = useState<JournalBlock[]>(
-    entry?.blocks?.length ? entry.blocks : [{ type: "text", content: "" }]
+    entry?.blocks?.length ? entry.blocks : [{ type: "text", content: "" }],
   );
   const [recordingIdx, setRecordingIdx] = useState<number | null>(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [unsavedChanges, setUnsavedChanges] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
   const menuAnimation = useRef(new Animated.Value(0)).current;
 
-  // Drag and drop handlers
-  const handleDragStart = useCallback((index: number) => {
-    setIsDragging(true);
-    setDraggedIndex(index);
-  }, []);
-
-  const handleDragEnd = useCallback(() => {
-    setIsDragging(false);
-    setDraggedIndex(null);
-  }, []);
-
-  const handleReorder = useCallback(
-    (fromIndex: number, toIndex: number) => {
-      if (fromIndex === toIndex) return;
-
-      const newBlocks = [...blocks];
-      const [movedBlock] = newBlocks.splice(fromIndex, 1);
-      newBlocks.splice(toIndex, 0, movedBlock);
-
-      setBlocks(newBlocks);
-    },
-    [blocks]
-  );
-
-  // Add this useEffect to properly track unsaved changes
+  // ── Track unsaved changes ──────────────────────────────────
   useEffect(() => {
     if (!entry) {
-      // For new entries, only mark as unsaved if there's actual content
       const hasContent =
         title.trim() !== "" ||
-        blocks.some((block) => {
-          switch (block.type) {
-            case "text":
-              return block.content?.trim() !== "";
-            case "checkbox":
-              return block.items?.some(
-                (item) => item.text?.trim() !== "" || item.checked
-              );
-            case "list":
-              return block.items?.some((item) => item?.trim() !== "");
-            case "image":
-              return block.uri !== "";
-            case "audio":
-              return block.uri !== "";
-            default:
-              return false;
-          }
+        blocks.some((b) => {
+          if (b.type === "text") return b.content?.trim() !== "";
+          if (b.type === "checkbox")
+            return b.items?.some((it) => it.text?.trim() !== "" || it.checked);
+          if (b.type === "list")
+            return b.items?.some((it) => it?.trim() !== "");
+          if (b.type === "image" || b.type === "audio") return b.uri !== "";
+          return false;
         });
       setUnsavedChanges(hasContent);
     } else {
-      // For existing entries, compare with original content
-      const contentChanged =
+      setUnsavedChanges(
         title !== entry.title ||
-        blocks.length !== entry.blocks.length ||
-        JSON.stringify(blocks) !== JSON.stringify(entry.blocks);
-      setUnsavedChanges(contentChanged);
+          blocks.length !== entry.blocks.length ||
+          JSON.stringify(blocks) !== JSON.stringify(entry.blocks),
+      );
     }
   }, [title, blocks, entry]);
 
   useEffect(() => {
     Animated.timing(menuAnimation, {
       toValue: showAddMenu ? 1 : 0,
-      duration: 200,
+      duration: 180,
       useNativeDriver: true,
     }).start();
   }, [showAddMenu]);
 
-  // Memoize handlers for performance
+  const isEmpty = useMemo(
+    () =>
+      !title.trim() &&
+      blocks.every(
+        (b) =>
+          (b.type === "text" && !b.content?.trim()) ||
+          (b.type === "checkbox" && b.items?.every((it) => !it.text?.trim())) ||
+          (b.type === "list" && b.items?.every((it) => !it?.trim())) ||
+          ((b.type === "image" || b.type === "audio") && !b.uri),
+      ),
+    [title, blocks],
+  );
+
+  // ── Actions ───────────────────────────────────────────────
+  const handleSave = useCallback(() => {
+    if (isEmpty) {
+      Alert.alert("Empty Entry", "Add some content before saving.");
+      return;
+    }
+    if (entry) editEntry(entry.id, { title, blocks });
+    else addEntry({ title, blocks });
+    setUnsavedChanges(false);
+    router.back();
+  }, [isEmpty, entry, title, blocks, editEntry, addEntry, router]);
+
+  const handleBack = useCallback(() => {
+    if (unsavedChanges) {
+      Alert.alert("Unsaved Changes", "Save before leaving?", [
+        { text: "Discard", style: "destructive", onPress: () => router.back() },
+        { text: "Cancel", style: "cancel" },
+        { text: "Save", onPress: handleSave },
+      ]);
+    } else {
+      router.back();
+    }
+  }, [unsavedChanges, handleSave, router]);
+
   const handleAddBlock = useCallback(async (type: JournalBlock["type"]) => {
     setShowAddMenu(false);
     if (type === "image") {
@@ -620,193 +595,160 @@ export default function JournalEditor() {
         aspect: [16, 9],
         quality: 0.8,
       });
-      if (!result.canceled && result.assets && result.assets[0]?.uri) {
+      if (!result.canceled && result.assets?.[0]?.uri) {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        setBlocks((prev) => [
-          ...prev,
-          { type: "image", uri: result.assets[0].uri },
-        ]);
+        setBlocks((p) => [...p, { type: "image", uri: result.assets[0].uri }]);
       }
       return;
     }
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setBlocks((prev) => [...prev, createEmptyBlock(type)]);
+    setBlocks((p) => [...p, createEmptyBlock(type)]);
   }, []);
 
-  const handleShowAddMenu = useCallback(() => {
-    setShowAddMenu((prev) => !prev);
-  }, []);
-
-  const handleRemoveBlock = (idx: number) => {
-    Alert.alert("Delete Block", "Are you sure you want to delete this block?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: () => {
-          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-          setBlocks(blocks.filter((_, i) => i !== idx));
-          if (recordingIdx === idx) setRecordingIdx(null);
-        },
-      },
-    ]);
-  };
-
-  const handleUpdateBlock = (idx: number, block: JournalBlock) => {
-    setBlocks(blocks.map((b, i) => (i === idx ? block : b)));
-  };
-
-  const handleSave = () => {
-    if (
-      !title.trim() &&
-      blocks.every(
-        (b) =>
-          (b.type === "text" && !b.content?.trim()) ||
-          (b.type === "checkbox" &&
-            b.items?.every((item) => !item.text?.trim())) ||
-          (b.type === "list" && b.items?.every((item) => !item?.trim())) ||
-          (b.type === "image" && !b.uri) ||
-          (b.type === "audio" && !b.uri)
-      )
-    ) {
-      Alert.alert("Empty Entry", "Please add some content before saving.");
-      return;
-    }
-
-    if (entry) {
-      editEntry(entry.id, { title, blocks });
-    } else {
-      addEntry({ title, blocks });
-    }
-    setUnsavedChanges(false);
-    router.back();
-  };
-
-  const handleBack = () => {
-    if (unsavedChanges) {
-      Alert.alert(
-        "Unsaved Changes",
-        "You have unsaved changes. Do you want to save before leaving?",
-        [
-          {
-            text: "Don't Save",
-            style: "destructive",
-            onPress: () => router.back(),
+  const handleRemoveBlock = useCallback(
+    (idx: number) => {
+      Alert.alert("Delete Block", "Remove this block?", [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            LayoutAnimation.configureNext(
+              LayoutAnimation.Presets.easeInEaseOut,
+            );
+            setBlocks((p) => p.filter((_, i) => i !== idx));
+            if (recordingIdx === idx) setRecordingIdx(null);
           },
-          { text: "Cancel", style: "cancel" },
-          { text: "Save", onPress: handleSave },
-        ]
-      );
-    } else {
-      router.back();
-    }
-  };
+        },
+      ]);
+    },
+    [recordingIdx],
+  );
 
+  const handleUpdateBlock = useCallback((idx: number, block: JournalBlock) => {
+    setBlocks((p) => p.map((b, i) => (i === idx ? block : b)));
+  }, []);
+
+  const handleReorder = useCallback((from: number, to: number) => {
+    if (from === to) return;
+    setBlocks((p) => {
+      const next = [...p];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  }, []);
+
+  // ── Block renderers ───────────────────────────────────────
   const renderBlock = (block: JournalBlock, idx: number) => {
     switch (block.type) {
       case "text":
         return (
-          <View className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700">
+          <View
+            style={[
+              es.blockCard,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
             <TextInput
-              className="text-base text-gray-800 dark:text-gray-200 leading-6"
+              style={[es.textBlockInput, { color: colors.textPrimary }]}
               placeholder="Start writing..."
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={colors.textSecondary}
               value={block.content}
-              onChangeText={(text) =>
-                handleUpdateBlock(idx, { ...block, content: text })
+              onChangeText={(t) =>
+                handleUpdateBlock(idx, { ...block, content: t })
               }
-              onFocus={() => {
-                setTimeout(() => {
-                  scrollRef.current?.scrollTo({
-                    y: idx * 200, // Approximate height of each block
-                    animated: true,
-                  });
-                }, 100);
-              }}
               multiline
               textAlignVertical="top"
-              style={{ minHeight: 60 }}
             />
           </View>
         );
 
       case "checkbox":
         return (
-          <View className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700">
+          <View
+            style={[
+              es.blockCard,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
             <TextInput
-              className="text-base font-medium text-gray-800 dark:text-gray-200 mb-3 px-2 py-1 border-b border-gray-200 dark:border-gray-600"
+              style={[
+                es.checklistTitle,
+                { color: colors.textPrimary, borderBottomColor: colors.border },
+              ]}
               placeholder="Checklist title (optional)"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={colors.textSecondary}
               value={block.title || ""}
-              onChangeText={(text) =>
-                handleUpdateBlock(idx, { ...block, title: text })
+              onChangeText={(t) =>
+                handleUpdateBlock(idx, { ...block, title: t })
               }
-              onFocus={() => {
-                setTimeout(() => {
-                  scrollRef.current?.scrollTo({
-                    y: idx * 200,
-                    animated: true,
-                  });
-                }, 100);
-              }}
             />
             {block.items.map((item, i) => (
-              <View key={i} className="flex-row items-center mb-3">
+              <View key={i} style={es.checkRow}>
                 <TouchableOpacity
-                  className={`w-6 h-6 rounded-lg border-2 mr-3 items-center justify-center ${
+                  style={[
+                    es.checkbox,
                     item.checked
-                      ? "bg-blue-500 border-blue-500"
-                      : "border-gray-300 dark:border-gray-600"
-                  }`}
+                      ? {
+                          backgroundColor: colors.accent,
+                          borderColor: colors.accent,
+                        }
+                      : {
+                          backgroundColor: "transparent",
+                          borderColor: colors.border,
+                        },
+                  ]}
                   onPress={() => {
                     const newItems = block.items.map((it, j) =>
-                      j === i ? { ...it, checked: !it.checked } : it
+                      j === i ? { ...it, checked: !it.checked } : it,
                     );
                     handleUpdateBlock(idx, { ...block, items: newItems });
                   }}
                 >
                   {item.checked && (
-                    <Text className="text-white font-bold text-sm">✓</Text>
+                    <Ionicons name="checkmark" size={13} color="#fff" />
                   )}
                 </TouchableOpacity>
                 <TextInput
-                  className="flex-1 text-base text-gray-800 dark:text-gray-200"
+                  style={[
+                    es.checkInput,
+                    {
+                      color: item.checked
+                        ? colors.textSecondary
+                        : colors.textPrimary,
+                    },
+                    item.checked && { textDecorationLine: "line-through" },
+                  ]}
                   placeholder="Add item..."
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={colors.textSecondary}
                   value={item.text}
-                  onChangeText={(text) => {
+                  onChangeText={(t) => {
                     const newItems = block.items.map((it, j) =>
-                      j === i ? { ...it, text } : it
+                      j === i ? { ...it, text: t } : it,
                     );
                     handleUpdateBlock(idx, { ...block, items: newItems });
-                  }}
-                  onFocus={() => {
-                    setTimeout(() => {
-                      scrollRef.current?.scrollTo({
-                        y: idx * 200 + i * 50, // Adjust for item position within block
-                        animated: true,
-                      });
-                    }, 100);
-                  }}
-                  style={{
-                    textDecorationLine: item.checked ? "line-through" : "none",
                   }}
                 />
                 {block.items.length > 1 && (
                   <TouchableOpacity
-                    className="ml-2 p-1"
+                    hitSlop={8}
                     onPress={() => {
                       const newItems = block.items.filter((_, j) => j !== i);
                       handleUpdateBlock(idx, { ...block, items: newItems });
                     }}
                   >
-                    <Text className="text-red-500 text-lg">×</Text>
+                    <Ionicons
+                      name="close"
+                      size={16}
+                      color={colors.textSecondary}
+                    />
                   </TouchableOpacity>
                 )}
               </View>
             ))}
             <TouchableOpacity
-              className="flex-row items-center mt-2"
+              style={es.addItemBtn}
               onPress={() =>
                 handleUpdateBlock(idx, {
                   ...block,
@@ -814,48 +756,66 @@ export default function JournalEditor() {
                 })
               }
             >
-              <Text className="text-blue-500 text-lg mr-2">+</Text>
-              <Text className="text-blue-500 font-medium">Add item</Text>
+              <Ionicons name="add" size={16} color={colors.accent} />
+              <Text
+                style={[
+                  es.addItemText,
+                  { color: colors.accent, fontFamily: "SoraSemiBold" },
+                ]}
+              >
+                Add item
+              </Text>
             </TouchableOpacity>
           </View>
         );
 
       case "list":
         return (
-          <View className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700">
-            <Text className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-3">
+          <View
+            style={[
+              es.blockCard,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
+            <Text style={[es.blockTypeLabel, { color: colors.textSecondary }]}>
               List
             </Text>
             {block.items.map((item, i) => (
-              <View key={i} className="flex-row items-center mb-3">
-                <View className="w-2 h-2 rounded-full bg-gray-400 mr-3 mt-2" />
+              <View key={i} style={es.listRow}>
+                <View
+                  style={[es.listDot, { backgroundColor: colors.accent }]}
+                />
                 <TextInput
-                  className="flex-1 text-base text-gray-800 dark:text-gray-200"
+                  style={[es.listInput, { color: colors.textPrimary }]}
                   placeholder="Add item..."
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={colors.textSecondary}
                   value={item}
-                  onChangeText={(text) => {
+                  onChangeText={(t) => {
                     const newItems = block.items.map((it, j) =>
-                      j === i ? text : it
+                      j === i ? t : it,
                     );
                     handleUpdateBlock(idx, { ...block, items: newItems });
                   }}
                 />
                 {block.items.length > 1 && (
                   <TouchableOpacity
-                    className="ml-2 p-1"
+                    hitSlop={8}
                     onPress={() => {
                       const newItems = block.items.filter((_, j) => j !== i);
                       handleUpdateBlock(idx, { ...block, items: newItems });
                     }}
                   >
-                    <Text className="text-red-500 text-lg">×</Text>
+                    <Ionicons
+                      name="close"
+                      size={16}
+                      color={colors.textSecondary}
+                    />
                   </TouchableOpacity>
                 )}
               </View>
             ))}
             <TouchableOpacity
-              className="flex-row items-center mt-2"
+              style={es.addItemBtn}
               onPress={() =>
                 handleUpdateBlock(idx, {
                   ...block,
@@ -863,28 +823,51 @@ export default function JournalEditor() {
                 })
               }
             >
-              <Text className="text-blue-500 text-lg mr-2">+</Text>
-              <Text className="text-blue-500 font-medium">Add item</Text>
+              <Ionicons name="add" size={16} color={colors.accent} />
+              <Text
+                style={[
+                  es.addItemText,
+                  { color: colors.accent, fontFamily: "SoraSemiBold" },
+                ]}
+              >
+                Add item
+              </Text>
             </TouchableOpacity>
           </View>
         );
 
       case "image":
         return (
-          <View className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700">
+          <View
+            style={[
+              es.blockCard,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
             {block.uri ? (
               <Image
                 source={{ uri: block.uri }}
-                className="w-full rounded-xl"
-                style={{ aspectRatio: 16 / 9 }}
+                style={es.imageBlock}
                 resizeMode="cover"
               />
             ) : (
-              <View className="w-full h-48 bg-gray-100 dark:bg-gray-700 rounded-xl items-center justify-center">
-                <Text className="text-gray-500 dark:text-gray-400 text-lg">
-                  📷
-                </Text>
-                <Text className="text-gray-500 dark:text-gray-400 mt-2">
+              <View
+                style={[
+                  es.imagePlaceholder,
+                  { backgroundColor: colors.surfaceMuted },
+                ]}
+              >
+                <Ionicons
+                  name="image-outline"
+                  size={32}
+                  color={colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    es.imagePlaceholderText,
+                    { color: colors.textSecondary, fontFamily: "Sora" },
+                  ]}
+                >
                   No image selected
                 </Text>
               </View>
@@ -895,7 +878,6 @@ export default function JournalEditor() {
       case "audio":
         return (
           <AudioBlock
-            key={idx}
             block={block}
             idx={idx}
             onUpdate={(b) => handleUpdateBlock(idx, b)}
@@ -906,8 +888,13 @@ export default function JournalEditor() {
 
       default:
         return (
-          <View className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700">
-            <Text className="text-gray-500 dark:text-gray-400">
+          <View
+            style={[
+              es.blockCard,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
+            <Text style={{ color: colors.textSecondary, fontFamily: "Sora" }}>
               Unknown block type
             </Text>
           </View>
@@ -915,154 +902,109 @@ export default function JournalEditor() {
     }
   };
 
-  // Get the date for the header (use entry.date if available, else today)
   const entryDate = entry?.date || new Date().toISOString().slice(0, 10);
   const formattedDate = format(parseISO(entryDate), "d MMMM yyyy");
-
-  // Animated value for unsaved changes indicator
-  const unsavedAnim = useRef(new RNAnimated.Value(0)).current;
-
-  // Determine if Save should be enabled
-  const isEmpty = useMemo(() => {
-    return (
-      !title.trim() &&
-      blocks.every(
-        (b) =>
-          (b.type === "text" && !b.content?.trim()) ||
-          (b.type === "checkbox" &&
-            b.items?.every((item) => !item.text?.trim())) ||
-          (b.type === "list" && b.items?.every((item) => !item?.trim())) ||
-          (b.type === "image" && !b.uri) ||
-          (b.type === "audio" && !b.uri)
-      )
-    );
-  }, [title, blocks]);
-
-  // Animate unsaved changes indicator
-  useEffect(() => {
-    if (unsavedChanges) {
-      RNAnimated.timing(unsavedAnim, {
-        toValue: 1,
-        duration: 200,
-        useNativeDriver: false,
-      }).start();
-    } else {
-      RNAnimated.timing(unsavedAnim, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: false,
-      }).start();
-    }
-  }, [unsavedChanges]);
-
-  // Interpolate for vertical movement
-  const dateTranslateY = unsavedAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -12],
-  });
-  const unsavedOpacity = unsavedAnim;
+  const saveEnabled = !isEmpty && unsavedChanges;
 
   return (
-    <View className="flex-1 bg-primary dark:bg-gray-900">
-      {/* Minimal Header with animated unsaved changes */}
-      <View className="flex-row items-center px-4 pt-12 pb-4">
-        <TouchableOpacity onPress={handleBack} className="p-2">
-          <Ionicons name="chevron-back" size={28} color="#222" />
+    <View style={[es.screen, { backgroundColor: colors.background }]}>
+      {/* ── Header ── */}
+      <View
+        style={[
+          es.header,
+          { paddingTop: insets.top + 12, borderBottomColor: colors.border },
+        ]}
+      >
+        <TouchableOpacity onPress={handleBack} style={es.headerBtn} hitSlop={8}>
+          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
-        <View className="flex-1 items-center justify-center">
-          <RNAnimated.View
-            style={{ transform: [{ translateY: dateTranslateY }] }}
-          >
-            <Text className="text-xl font-bold text-gray-900 dark:text-gray-100">
-              {formattedDate}
+        <View style={es.headerCenter}>
+          <Text style={[es.headerDate, { color: colors.textPrimary }]}>
+            {formattedDate}
+          </Text>
+          {unsavedChanges && (
+            <Text style={[es.unsavedText, { color: colors.textSecondary }]}>
+              Unsaved changes
             </Text>
-          </RNAnimated.View>
-          <RNAnimated.View
-            style={{
-              opacity: unsavedOpacity,
-              height: unsavedAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, 18],
-              }),
-            }}
-          >
-            {unsavedChanges && (
-              <Text className="text-xs text-orange-500 mt-1 font-SoraSemiBold">
-                Unsaved changes
-              </Text>
-            )}
-          </RNAnimated.View>
+          )}
         </View>
         <TouchableOpacity
           onPress={handleSave}
-          className="p-2"
-          disabled={isEmpty || !unsavedChanges}
-          style={{ opacity: isEmpty || !unsavedChanges ? 0.4 : 1 }}
+          style={es.headerBtn}
+          disabled={!saveEnabled}
+          hitSlop={8}
         >
-          <Text className="text-blue-600 font-bold text-lg">Save</Text>
+          <Text
+            style={[
+              es.saveText,
+              { color: saveEnabled ? colors.accent : colors.border },
+            ]}
+          >
+            Save
+          </Text>
         </TouchableOpacity>
       </View>
 
       <KeyboardAvoidingView
-        className="flex-1 mx-4"
+        style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 20}
       >
         <ScrollView
           ref={scrollRef}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 200 }}
+          contentContainerStyle={[
+            es.scrollContent,
+            { paddingBottom: insets.bottom + 160 },
+          ]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
+          showsVerticalScrollIndicator={false}
         >
-          {/* Title Input */}
-          <View className="bg-white dark:bg-gray-800 rounded-2xl p-4 mb-4 shadow-sm border border-gray-100 dark:border-gray-700">
-            <TextInput
-              className="text-2xl font-bold text-gray-800 dark:text-gray-200"
-              placeholder="Enter title..."
-              placeholderTextColor="#9CA3AF"
-              value={title}
-              onChangeText={setTitle}
-              onFocus={() => {
-                setTimeout(() => {
-                  scrollRef.current?.scrollTo({
-                    y: 0,
-                    animated: true,
-                  });
-                }, 100);
-              }}
-            />
-          </View>
+          {/* ── Title ── */}
+          <TextInput
+            style={[
+              es.titleInput,
+              { color: colors.textPrimary, borderBottomColor: colors.border },
+            ]}
+            placeholder="Entry title..."
+            placeholderTextColor={colors.textSecondary}
+            value={title}
+            onChangeText={setTitle}
+          />
 
-          {/* Blocks */}
-          {blocks.map((block, idx) => (
-            <DraggableBlock
-              key={idx}
-              index={idx}
-              onReorder={handleReorder}
-              isDragging={isDragging}
-              onDragStart={handleDragStart}
-              onDragEnd={handleDragEnd}
-              blockHeight={200} // Approximate height, can be made dynamic
-              onDelete={() => handleRemoveBlock(idx)}
-              canDelete={blocks.length > 1}
-            >
-              <View className="relative">{renderBlock(block, idx)}</View>
-            </DraggableBlock>
-          ))}
-          <View style={{ height: 100 }} />
+          {/* ── Blocks ── */}
+          <View style={{ paddingHorizontal: 16 }}>
+            {blocks.map((block, idx) => (
+              <DraggableBlock
+                key={idx}
+                index={idx}
+                onReorder={handleReorder}
+                isDragging={isDragging}
+                onDragStart={() => setIsDragging(true)}
+                onDragEnd={() => setIsDragging(false)}
+                blockHeight={200}
+                onDelete={() => handleRemoveBlock(idx)}
+                canDelete={blocks.length > 1}
+              >
+                <View style={{ marginHorizontal: 0 }}>
+                  {renderBlock(block, idx)}
+                </View>
+              </DraggableBlock>
+            ))}
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Add Block Menu & Floating Button */}
-      <View className="absolute bottom-8 right-4 items-end z-50">
+      {/* ── FAB + Add block menu ── */}
+      <View style={es.fabContainer} pointerEvents="box-none">
         <AddBlockMenu
           visible={showAddMenu}
           onAdd={handleAddBlock}
           menuAnimation={menuAnimation}
         />
         <TouchableOpacity
-          className="w-16 h-16 bg-blue-600 rounded-full items-center justify-center shadow-lg"
-          onPress={handleShowAddMenu}
+          style={[es.fab, { backgroundColor: colors.accent }]}
+          onPress={() => setShowAddMenu((p) => !p)}
           activeOpacity={0.85}
         >
           <Animated.View
@@ -1077,10 +1019,225 @@ export default function JournalEditor() {
               ],
             }}
           >
-            <Ionicons name="add" size={32} color="#fff" />
+            <Ionicons name="add" size={28} color="#fff" />
           </Animated.View>
         </TouchableOpacity>
       </View>
     </View>
   );
 }
+
+// ─── Styles ─────────────────────────────────────────────────
+
+const es = StyleSheet.create({
+  screen: { flex: 1 },
+
+  // Header
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+  },
+  headerBtn: {
+    width: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 4,
+  },
+  headerCenter: { flex: 1, alignItems: "center" },
+  headerDate: { fontSize: 16, fontFamily: "SoraSemiBold", letterSpacing: -0.2 },
+  unsavedText: { fontSize: 11, fontFamily: "Sora", marginTop: 2 },
+  saveText: { fontSize: 15, fontFamily: "SoraSemiBold" },
+
+  // Scroll content
+  scrollContent: { paddingTop: 8 },
+
+  // Title input
+  titleInput: {
+    fontSize: 22,
+    fontFamily: "SoraBold",
+    marginHorizontal: 20,
+    marginBottom: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    letterSpacing: -0.3,
+  },
+
+  // Block card (base for all block types)
+  blockCard: {
+    borderRadius: 0,
+    borderWidth: 0,
+    padding: 16,
+    overflow: "hidden",
+  },
+
+  // Text block
+  textBlockInput: {
+    fontSize: 15,
+    fontFamily: "Sora",
+    lineHeight: 24,
+    minHeight: 80,
+    textAlignVertical: "top",
+  },
+
+  // Checkbox block
+  checklistTitle: {
+    fontSize: 14,
+    fontFamily: "SoraSemiBold",
+    paddingBottom: 10,
+    marginBottom: 10,
+    borderBottomWidth: 1,
+  },
+  checkRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+    gap: 10,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 7,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkInput: { flex: 1, fontSize: 14, fontFamily: "Sora" },
+
+  // List block
+  blockTypeLabel: {
+    fontSize: 10,
+    fontFamily: "SoraSemiBold",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+    marginBottom: 10,
+  },
+  listRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+    gap: 10,
+  },
+  listDot: { width: 6, height: 6, borderRadius: 3 },
+  listInput: { flex: 1, fontSize: 14, fontFamily: "Sora" },
+
+  // Shared "add item" row
+  addItemBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 4,
+  },
+  addItemText: { fontSize: 13 },
+
+  // Image block
+  imageBlock: { width: "100%", aspectRatio: 16 / 9, borderRadius: 10 },
+  imagePlaceholder: {
+    width: "100%",
+    height: 140,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  imagePlaceholderText: { fontSize: 13 },
+
+  // Audio block
+  audioTitleInput: {
+    fontSize: 14,
+    fontFamily: "SoraSemiBold",
+    paddingBottom: 10,
+    marginBottom: 12,
+    borderBottomWidth: 1,
+  },
+  audioPlaybackRow: { flexDirection: "row", alignItems: "center" },
+  audioRecordingName: { fontSize: 12, fontFamily: "Sora", marginBottom: 8 },
+  progressTrack: {
+    height: 4,
+    borderRadius: 4,
+    overflow: "hidden",
+    marginBottom: 6,
+  },
+  progressFill: { height: 4, borderRadius: 4 },
+  progressTimes: { flexDirection: "row", justifyContent: "space-between" },
+  audioTimeText: { fontSize: 11, fontFamily: "Sora" },
+  audioControls: { flexDirection: "row", gap: 8 },
+  audioBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  recordingContainer: { alignItems: "center", paddingVertical: 8, gap: 16 },
+  recordingIndicator: { flexDirection: "row", alignItems: "center", gap: 12 },
+  recordingDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#E05A5A",
+  },
+  recordingTimer: { fontSize: 20, letterSpacing: 1 },
+  waveContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    height: 40,
+    gap: 3,
+  },
+  waveBar: { width: 3, height: 32, borderRadius: 3 },
+  stopBtn: { paddingHorizontal: 20, paddingVertical: 8, borderRadius: 12 },
+  stopBtnText: { fontSize: 14 },
+
+  recordIdle: { alignItems: "center", paddingVertical: 12, gap: 8 },
+  micBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  micHint: { fontSize: 12 },
+
+  // Add block menu
+  addMenu: {
+    borderRadius: 18,
+    borderWidth: 1,
+    overflow: "hidden",
+    marginBottom: 12,
+    minWidth: 180,
+  },
+  addMenuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 12,
+  },
+  addMenuIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addMenuLabel: { fontSize: 14 },
+
+  // FAB
+  fabContainer: {
+    position: "absolute",
+    bottom: 28,
+    right: 20,
+    alignItems: "flex-end",
+    zIndex: 50,
+  },
+  fab: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+});

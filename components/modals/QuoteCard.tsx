@@ -1,97 +1,90 @@
-import { BlurView } from "expo-blur";
-import { Modal, Text, View } from "react-native";
-import Bulb from "@/assets/svg/idea.svg";
+import { useTheme } from "@/context/ThemeContext";
 import quotes from "@/data/quotes.json";
-import { useState, useEffect, useMemo } from "react";
-import Timer from "@/assets/svg/tabs/focus.svg";
+import React, { useEffect, useMemo } from "react";
+import { StyleSheet, Text } from "react-native";
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 
 type QuoteModalProps = {
   onClose: () => void;
 };
 
-const VISIBLE_DURATION = 3000; // 3 seconds
-
 const QuoteCard = ({ onClose }: QuoteModalProps) => {
-  const [isVisible, setIsVisible] = useState(true);
-  const [timer, setTimer] = useState(3);
-  
-  // Memoize the quote to prevent re-renders
-  const quote = useMemo(() => {
-    const index = Math.floor(Math.random() * quotes.length);
-    return quotes[index];
+  const { colors } = useTheme();
+  const translateY = useSharedValue(80);
+  const opacity = useSharedValue(0);
+
+  const quote = useMemo(
+    () => quotes[Math.floor(Math.random() * quotes.length)],
+    [],
+  );
+
+  useEffect(() => {
+    translateY.value = withSpring(0, { damping: 20, stiffness: 200 });
+    opacity.value = withTiming(1, { duration: 280 });
+    const t = setTimeout(() => {
+      opacity.value = withTiming(0, { duration: 280 });
+      translateY.value = withTiming(80, { duration: 280 }, (finished) => {
+        if (finished) runOnJS(onClose)();
+      });
+    }, 3500);
+    return () => clearTimeout(t);
   }, []);
 
-  // Handle the auto-dismiss timer
-  useEffect(() => {
-    // Set up auto-dismiss timer
-    const timerId = setTimeout(() => {
-      setIsVisible(false);
-      onClose();
-    }, VISIBLE_DURATION);
-    
-    // Set up countdown interval
-    const intervalId = setInterval(() => {
-      setTimer(prev => {
-        if (prev <= 1) {
-          clearInterval(intervalId);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    
-    // Clean up timers
-    return () => {
-      clearTimeout(timerId);
-      clearInterval(intervalId);
-    };
-  }, [onClose]);
-
+  const animStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ translateY: translateY.value }],
+  }));
 
   return (
-    <Modal
-      visible={isVisible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
+    <Animated.View
+      style={[
+        styles.card,
+        animStyle,
+        { backgroundColor: colors.surface, borderColor: colors.border },
+      ]}
+      pointerEvents="none"
     >
-      <View className="flex-1 justify-center items-center bg-black/50">
-        <BlurView
-          intensity={20}
-          className="w-full h-full justify-center items-center"
-        >
-          <View className="w-[85%] bg-tab-bg h-[50%] rounded-2xl shadow-xl overflow-hidden">
-            <View className="flex-1 justify-between p-6">
-              <View className="items-center">
-                <Bulb />
-              </View>
-              <View className="items-center justify-center">
-                <Text className="text-text-primary text-base font-SoraSemiBold">
-                  &quot;{quote.quoteText}&quot;
-                </Text>
-                <Text className="text-text-primary text-base font-WorkSansItalic">
-                  - {quote.quoteAuthor}
-                </Text>
-              </View>
-              <View className="flex justify-between items-center">
-                <View>
-                  <Text className="text-text-primary text-base font-SoraSemiBold">
-                    Timer Started
-                  </Text>
-                </View>
-                <View className="flex-row gap-2">
-                  <Timer />
-                  <Text className="text-text-primary text-2xl font-SoraBold">
-                    {timer}s
-                  </Text>
-                </View>
-              </View>
-            </View>
-          </View>
-        </BlurView>
-      </View>
-    </Modal>
+      <Text style={[styles.quote, { color: colors.textPrimary }]}>
+        "{quote.quoteText}"
+      </Text>
+      <Text style={[styles.author, { color: colors.textSecondary }]}>
+        — {quote.quoteAuthor}
+      </Text>
+    </Animated.View>
   );
 };
+
+const styles = StyleSheet.create({
+  card: {
+    position: "absolute",
+    bottom: 120,
+    left: 20,
+    right: 20,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  quote: {
+    fontSize: 14,
+    fontFamily: "SoraSemiBold",
+    lineHeight: 22,
+    marginBottom: 8,
+  },
+  author: {
+    fontSize: 13,
+    fontFamily: "WorkSansItalic",
+  },
+});
 
 export default QuoteCard;

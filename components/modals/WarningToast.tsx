@@ -1,6 +1,7 @@
+import { useTheme } from "@/context/ThemeContext";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 interface WarningToastProps {
   text1: string;
@@ -13,18 +14,64 @@ export default function WarningToast({
   text2,
   onPress,
 }: WarningToastProps) {
+  const { colors } = useTheme();
   return (
-    <View className="flex-row items-center justify-between bg-amber-500 rounded-2xl px-6 py-3 mt-2 mx-4 shadow-lg">
-      <View className="flex-row items-center">
-        <Ionicons name="warning" size={22} color="#fff" />
-        <Text className="text-white font-SoraSemiBold ml-3">{text1}</Text>
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: colors.surface, borderColor: colors.border },
+      ]}
+    >
+      <View style={styles.left}>
+        <View
+          style={[styles.iconWrap, { backgroundColor: colors.accentMuted }]}
+        >
+          <Ionicons name="warning" size={16} color={colors.accent} />
+        </View>
+        <View>
+          <Text style={[styles.text, { color: colors.textPrimary }]}>
+            {text1}
+          </Text>
+          {text2 ? (
+            <Text style={[styles.sub, { color: colors.textSecondary }]}>
+              {text2}
+            </Text>
+          ) : null}
+        </View>
       </View>
-      <TouchableOpacity
-        onPress={onPress}
-        className="ml-6 px-3 py-1 rounded-lg bg-white/20"
-      >
-        <Ionicons name="close" size={20} color="#fff" />
-      </TouchableOpacity>
+      {onPress && (
+        <TouchableOpacity onPress={onPress} hitSlop={10}>
+          <Ionicons name="close" size={18} color={colors.textSecondary} />
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginTop: 8,
+    marginHorizontal: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    shadowColor: "#000",
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  left: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
+  iconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  text: { fontSize: 14, fontFamily: "SoraSemiBold" },
+  sub: { fontSize: 12, fontFamily: "Sora", marginTop: 2 },
+});

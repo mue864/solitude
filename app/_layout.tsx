@@ -1,6 +1,7 @@
 import WarningToast from "@/components/modals/WarningToast";
 import ReflectionSaveToast from "@/components/ReflectionSaveToast";
 import UndoToast from "@/components/undoToast";
+import { ThemeProvider, useTheme } from "@/context/ThemeContext";
 import { useSessionStore } from "@/store/sessionState";
 import notifee, { EventType } from "@notifee/react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -49,7 +50,7 @@ export default function RootLayout() {
 
   // Check streak when the app loads
   const checkAndResetStreak = useSessionStore(
-    (state) => state.checkAndResetStreak
+    (state) => state.checkAndResetStreak,
   );
 
   useEffect(() => {
@@ -123,7 +124,7 @@ export default function RootLayout() {
           // Navigate to focus screen when background reminder is pressed
           // This will be handled by the navigation system
           console.log(
-            "🎯 Background session reminder pressed - should navigate to focus"
+            "🎯 Background session reminder pressed - should navigate to focus",
           );
         }
       }
@@ -140,7 +141,7 @@ export default function RootLayout() {
         if (type === EventType.PRESS) {
           console.log(
             "📱 Background notification pressed:",
-            detail.notification
+            detail.notification,
           );
 
           // Store action to be handled when app opens
@@ -189,10 +190,22 @@ export default function RootLayout() {
   }, []);
 
   return (
+    <ThemeProvider>
+      <ThemedRoot onLayout={onLayoutRootView} />
+    </ThemeProvider>
+  );
+}
+
+function ThemedRoot({ onLayout }: { onLayout: () => void }) {
+  const { isDarkMode, colors } = useTheme();
+
+  return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <View style={styles.container} onLayout={onLayoutRootView}>
-        <StatusBar style="dark" />
-        <View style={styles.background} />
+      <View style={styles.container} onLayout={onLayout}>
+        <StatusBar style={isDarkMode ? "light" : "dark"} />
+        <View
+          style={[styles.background, { backgroundColor: colors.background }]}
+        />
         <SafeAreaView className="flex-1">
           <Stack
             screenOptions={{
@@ -255,7 +268,6 @@ const styles = StyleSheet.create({
   },
   background: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "#F4F9FF",
   },
   screenContent: {
     backgroundColor: "transparent",

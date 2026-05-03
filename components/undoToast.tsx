@@ -1,6 +1,7 @@
-import React from "react";
-import { View, Text, TouchableOpacity } from "react-native";
+import { useTheme } from "@/context/ThemeContext";
 import { Ionicons } from "@expo/vector-icons";
+import React from "react";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 export default function UndoToast({
   text1,
@@ -9,18 +10,59 @@ export default function UndoToast({
   text1: string;
   onPress: () => void;
 }) {
+  const { colors } = useTheme();
   return (
-    <View className="flex-row items-center justify-between bg-red-500 rounded-2xl px-6 py-3 mt-2 mx-4 shadow-lg">
-      <View className="flex-row items-center">
-        <Ionicons name="trash" size={22} color="#fff" />
-        <Text className="text-white font-SoraSemiBold ml-3">{text1}</Text>
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: colors.surface, borderColor: colors.border },
+      ]}
+    >
+      <View style={styles.left}>
+        <Ionicons name="trash" size={18} color={colors.destructive} />
+        <Text style={[styles.text, { color: colors.textPrimary }]}>
+          {text1}
+        </Text>
       </View>
       <TouchableOpacity
         onPress={onPress}
-        className="ml-6 px-3 py-1 rounded-lg bg-white/20"
+        style={[
+          styles.undoBtn,
+          {
+            backgroundColor: colors.accentMuted,
+            borderColor: colors.accent + "60",
+          },
+        ]}
       >
-        <Text className="text-white font-SoraSemiBold">Undo</Text>
+        <Text style={[styles.undoText, { color: colors.accent }]}>Undo</Text>
       </TouchableOpacity>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginTop: 8,
+    marginHorizontal: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    shadowColor: "#000",
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  left: { flexDirection: "row", alignItems: "center", gap: 10 },
+  text: { fontSize: 14, fontFamily: "SoraSemiBold" },
+  undoBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  undoText: { fontSize: 13, fontFamily: "SoraSemiBold" },
+});

@@ -50,7 +50,7 @@ export type CustomFlow = {
 };
 
 // Built-in flows (migrated from sessionState) - MOVED BEFORE STORE
-const BUILTIN_FLOWS: CustomFlow[] = [
+export const BUILTIN_FLOWS: CustomFlow[] = [
   {
     id: "builtin-classic-focus",
     name: "Classic Focus",
@@ -256,7 +256,7 @@ export const useFlowStore = create<FlowStore>()(
       updateFlow: (flow) =>
         set((state) => ({
           customFlows: state.customFlows.map((f) =>
-            f.id === flow.id ? { ...flow, updatedAt: Date.now() } : f
+            f.id === flow.id ? { ...flow, updatedAt: Date.now() } : f,
           ),
         })),
       deleteFlow: (id) =>
@@ -290,7 +290,7 @@ export const useFlowStore = create<FlowStore>()(
           customFlows: state.customFlows.map((f) =>
             f.id === flowId
               ? { ...f, steps: newSteps, updatedAt: Date.now() }
-              : f
+              : f,
           ),
         })),
       addStep: (flowId, step) =>
@@ -298,7 +298,7 @@ export const useFlowStore = create<FlowStore>()(
           customFlows: state.customFlows.map((f) =>
             f.id === flowId
               ? { ...f, steps: [...f.steps, step], updatedAt: Date.now() }
-              : f
+              : f,
           ),
         })),
       updateStep: (flowId, step) =>
@@ -308,11 +308,11 @@ export const useFlowStore = create<FlowStore>()(
               ? {
                   ...f,
                   steps: f.steps.map((s) =>
-                    s.id === step.id ? { ...s, ...step } : s
+                    s.id === step.id ? { ...s, ...step } : s,
                   ),
                   updatedAt: Date.now(),
                 }
-              : f
+              : f,
           ),
         })),
       deleteStep: (flowId, stepId) =>
@@ -324,7 +324,7 @@ export const useFlowStore = create<FlowStore>()(
                   steps: f.steps.filter((s) => s.id !== stepId),
                   updatedAt: Date.now(),
                 }
-              : f
+              : f,
           ),
         })),
     }),
@@ -346,6 +346,6 @@ export const useFlowStore = create<FlowStore>()(
           await AsyncStorage.removeItem(key);
         },
       },
-    }
-  )
+    },
+  ),
 );

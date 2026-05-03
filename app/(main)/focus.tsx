@@ -1,49 +1,112 @@
+import { useTheme } from "@/context/ThemeContext";
+import { BUILTIN_FLOWS, useFlowStore } from "@/store/flowStore";
+import { useJournalStore } from "@/store/journalStore";
+import { useSessionStore, type SessionType } from "@/store/sessionState";
 import { useTaskStore } from "@/store/taskStore";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
-  Animated,
-  Easing,
-  Pressable,
+  ScrollView,
+  StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
-
-// Icons
-import ChevronDown from "@/assets/svg/chevron-down.svg";
-import Edit from "@/assets/svg/edit.svg";
-import Streak from "@/assets/svg/streak.svg";
-
-// Components
-import ChangeSessionTimeCard from "@/components/modals/ChangeSessionTimeCard";
-import FlowCompletionModal from "@/components/modals/FlowCompletionModal";
-import QuickTaskModal from "@/components/modals/QuickTaskModal";
-import QuoteCard from "@/components/modals/QuoteCard";
-import SessionIntelligenceModal from "@/components/modals/SessionIntelligenceModal";
-import StartSessionBtn from "@/components/StartSessionBtn";
-
-// Store
-import { FlowDetailsModal, FlowIndicator } from "@/components/FlowIndicator";
-import AddJournalModal from "@/components/modals/AddJournalModal";
-import FlowsModal from "@/components/modals/FlowsModal";
-import SessionCompletionModal from "@/components/modals/SessionCompletionModal";
-import SessionIndicator from "@/components/SessionIndicator";
-import { useFlowStore } from "@/store/flowStore";
-import { useJournalStore } from "@/store/journalStore";
-import { useSessionStore, type SessionType } from "@/store/sessionState";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import Toast from "react-native-toast-message";
 
-// notifications
+import Streak from "@/assets/svg/streak.svg";
+import { FlowDetailsModal } from "@/components/FlowIndicator";
+import StartSessionBtn from "@/components/StartSessionBtn";
+import AddJournalModal from "@/components/modals/AddJournalModal";
+import ChangeSessionTimeCard from "@/components/modals/ChangeSessionTimeCard";
+import FlowCompletionModal from "@/components/modals/FlowCompletionModal";
+import FlowsModal from "@/components/modals/FlowsModal";
+import QuickTaskModal from "@/components/modals/QuickTaskModal";
+import QuoteCard from "@/components/modals/QuoteCard";
+import SessionCompletionModal from "@/components/modals/SessionCompletionModal";
+import SessionIntelligenceModal from "@/components/modals/SessionIntelligenceModal";
 import { useNotifications } from "@/hooks/useNotifications";
 
+// ---------------------------------------------------------------------------
+// Session metadata
+// ---------------------------------------------------------------------------
+const SESSION_META: Record<SessionType, { emoji: string; label: string }> = {
+  Classic: { emoji: "🍅", label: "Classic" },
+  "Deep Focus": { emoji: "🧠", label: "Deep Focus" },
+  "Quick Task": { emoji: "⚡", label: "Quick Task" },
+  "Creative Time": { emoji: "🎨", label: "Creative" },
+  "Review Mode": { emoji: "📋", label: "Review" },
+  "Course Time": { emoji: "📚", label: "Course" },
+  "Short Break": { emoji: "☕", label: "Short Break" },
+  "Long Break": { emoji: "🌿", label: "Long Break" },
+  "Reset Session": { emoji: "🔄", label: "Reset" },
+  "Mindful Moment": { emoji: "🧘", label: "Mindful" },
+};
+
+const SESSION_CHIP_ORDER: SessionType[] = [
+  "Classic",
+  "Deep Focus",
+  "Quick Task",
+  "Creative Time",
+  "Review Mode",
+  "Short Break",
+  "Mindful Moment",
+];
+
+function getSessionBg(type: SessionType, isDarkMode: boolean): string {
+  const breakTypes: SessionType[] = [
+    "Short Break",
+    "Long Break",
+    "Mindful Moment",
+    "Reset Session",
+  ];
+  const creativeTypes: SessionType[] = ["Creative Time"];
+  const deepTypes: SessionType[] = ["Deep Focus", "Course Time"];
+  if (breakTypes.includes(type)) return isDarkMode ? "#1A1408" : "#FDF8EE";
+  if (creativeTypes.includes(type)) return isDarkMode ? "#150D1A" : "#F5EEF8";
+  if (deepTypes.includes(type)) return isDarkMode ? "#0D1520" : "#EEF3FA";
+  return isDarkMode ? "#111318" : "#FAF8F5";
+}
+
+function taskTagColor(tag: string | null | undefined): string {
+  switch (tag) {
+    case "urgent":
+      return "#E05A5A";
+    case "important":
+      return "#E8A43A";
+    case "quickwin":
+      return "#4CAF7D";
+    case "deepwork":
+      return "#5B8DEF";
+    default:
+      return "#8A8A96";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Focus screen
+// ---------------------------------------------------------------------------
 export default function Focus() {
   const router = useRouter();
   const notifications = useNotifications();
+  const { colors, isDarkMode } = useTheme();
 
-  // Modal visibility states
+  // ── Modal visibility ──────────────────────────────────────────────────────
   const [isQuickTaskModalVisible, setIsQuickTaskModalVisible] = useState(false);
   const [isSessionTypeModalVisible, setIsSessionTypeModalVisible] =
     useState(false);
@@ -53,31 +116,9 @@ export default function Focus() {
   const [showSessionComplete, setShowSessionComplete] = useState(false);
   const [showReflect, setShowReflect] = useState(false);
   const [showInsights, setShowInsights] = useState(false);
+  const [showFlowDetails, setShowFlowDetails] = useState(false);
 
-  // Animation for TodayProgress
-  const flowContextAnim = useRef(new Animated.Value(0)).current;
-
-  // Animation for tabs/indicator crossfade and scale
-  const tabsOpacity = useRef(new Animated.Value(1)).current;
-  const indicatorOpacity = useRef(new Animated.Value(0)).current;
-  const indicatorScale = useRef(new Animated.Value(0.95)).current;
-
-  // Animation for Add Task button
-  const addTaskOpacity = useRef(new Animated.Value(1)).current;
-
-  // Add new animated values for translateY
-  const tabsTranslateY = useRef(new Animated.Value(0)).current;
-  const indicatorTranslateY = useRef(new Animated.Value(32)).current;
-
-  // --- State for disappearing UI height ---
-  const [disappearingUIHeight, setDisappearingUIHeight] = useState(0);
-
-  // --- Animation values ---
-  const sessionControlsTranslateY = useRef(new Animated.Value(0)).current;
-
-  // --- State for reflection save toast ---
-
-  // Get session store state and actions
+  // ── Session store ─────────────────────────────────────────────────────────
   const {
     duration,
     isRunning,
@@ -97,45 +138,133 @@ export default function Focus() {
     isNewSession,
   } = useSessionStore();
 
-  // Calculate duration in minutes
+  const currentSessionId = useSessionStore((s) => s.sessionId);
   const durationMinutes = Math.floor(duration / 60);
 
-  // Track the last session ID we showed the quote for
+  // ── Task store ────────────────────────────────────────────────────────────
+  const currentTaskId = useTaskStore((s) => s.currentTaskId);
+  const tasks = useTaskStore((s) => s.tasks);
+  const clearCurrentTask = useTaskStore((s) => s.clearCurrentTask);
+  const completeCurrentTask = useTaskStore((s) => s.completeCurrentTask);
+  const currentTask = tasks.find((t) => t.id === currentTaskId);
+
+  // ── Journal store ─────────────────────────────────────────────────────────
+  const addJournalEntry = useJournalStore((s) => s.addEntry);
+
+  // ── Flow store (for progress bar) ─────────────────────────────────────────
+  const customFlows = useFlowStore((s) => s.customFlows);
+
+  const currentFlowSteps = useMemo(() => {
+    if (!currentFlowId) return 0;
+    const builtin = BUILTIN_FLOWS.find((f) => f.id === currentFlowId);
+    if (builtin) return builtin.steps.length;
+    return customFlows.find((f) => f.id === currentFlowId)?.steps.length ?? 0;
+  }, [currentFlowId, customFlows]);
+
+  const flowProgress =
+    currentFlowSteps > 0 ? (currentFlowStep + 1) / currentFlowSteps : 0;
+
+  // ── Refs ──────────────────────────────────────────────────────────────────
   const lastSessionId = useRef<string | null>(null);
-
-  // Get the current session state
-  const currentSessionId = useSessionStore((state) => state.sessionId);
-
-  // Track the last flow and step we showed a quote for
   const lastFlowContext = useRef<{
     flow: string | null;
     step: number;
     lastQuoteTime: number;
   }>({ flow: null, step: -1, lastQuoteTime: 0 });
-
-  // Track previous sessionId and isRunning
   const prevSessionId = useRef(currentSessionId);
   const prevIsRunning = useRef(isRunning);
 
-  // Initialize notifications and handle pending actions
-  useEffect(() => {
-    const initializeNotifications = async () => {
-      try {
-        console.log("Initializing notifications in focus component...");
-        await notifications.initialize();
-        console.log(
-          "Notifications initialized successfully in focus component"
-        );
+  // ── Animations ────────────────────────────────────────────────────────────
+  const isActive = isRunning || isPaused;
 
-        // Check for pending actions from background notifications
+  const idleOpacity = useSharedValue(isActive ? 0 : 1);
+  const idleTranslateY = useSharedValue(isActive ? -14 : 0);
+  const activeOpacity = useSharedValue(isActive ? 1 : 0);
+  const timerScale = useSharedValue(isActive ? 1.08 : 1);
+
+  useEffect(() => {
+    const toActive = isRunning || isPaused;
+    if (toActive) {
+      // idle out first, then active in
+      idleOpacity.value = withTiming(0, { duration: 160 });
+      idleTranslateY.value = withTiming(-14, { duration: 160 });
+      activeOpacity.value = withDelay(140, withTiming(1, { duration: 220 }));
+    } else {
+      // active out first, then idle in
+      activeOpacity.value = withTiming(0, { duration: 160 });
+      idleOpacity.value = withDelay(140, withTiming(1, { duration: 220 }));
+      idleTranslateY.value = withDelay(140, withTiming(0, { duration: 220 }));
+    }
+    timerScale.value = withSpring(toActive ? 1.08 : 1, {
+      damping: 20,
+      stiffness: 120,
+    });
+  }, [isRunning, isPaused]);
+
+  const idleStyle = useAnimatedStyle(() => ({
+    opacity: idleOpacity.value,
+    transform: [{ translateY: idleTranslateY.value }],
+  }));
+
+  const activeControlStyle = useAnimatedStyle(() => ({
+    opacity: activeOpacity.value,
+  }));
+
+  const idleControlStyle = useAnimatedStyle(() => ({
+    opacity: idleOpacity.value,
+  }));
+
+  const timerStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: timerScale.value }],
+  }));
+
+  // ── Quote logic ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isRunning || !currentSessionId) return;
+    const now = Date.now();
+    const shouldShowQuote = () => {
+      if (now - lastFlowContext.current.lastQuoteTime < 5 * 60 * 1000)
+        return false;
+      return (
+        currentFlowId !== lastFlowContext.current.flow ||
+        now - lastFlowContext.current.lastQuoteTime > 12 * 60 * 60 * 1000 ||
+        (lastFlowContext.current.flow && !currentFlowId)
+      );
+    };
+    if (currentSessionId !== lastSessionId.current) {
+      lastSessionId.current = currentSessionId;
+      if (shouldShowQuote()) {
+        lastFlowContext.current = {
+          flow: currentFlowId,
+          step: currentFlowStep,
+          lastQuoteTime: now,
+        };
+        const t1 = setTimeout(() => {
+          setShowQuoteModal(true);
+          const t2 = setTimeout(() => setShowQuoteModal(false), 3000);
+          return () => clearTimeout(t2);
+        }, 100);
+        return () => clearTimeout(t1);
+      } else {
+        lastFlowContext.current = {
+          ...lastFlowContext.current,
+          flow: currentFlowId,
+          step: currentFlowStep,
+        };
+      }
+    }
+  }, [isRunning, currentSessionId, currentFlowId, currentFlowStep]);
+
+  const handleQuoteModalClose = useCallback(() => setShowQuoteModal(false), []);
+
+  // ── Notifications ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    const init = async () => {
+      try {
+        await notifications.initialize();
         const pendingAction = await AsyncStorage.getItem("pendingAction");
         if (pendingAction) {
-          console.log("Found pending action:", pendingAction);
           switch (pendingAction) {
-            case "background-session-reminder":
-              // Navigate to focus screen (already here, so just clear the action)
-              console.log("🎯 Background session reminder action handled");
-              break;
             case "start-session":
               resumeSession();
               break;
@@ -148,335 +277,62 @@ export default function Focus() {
           }
           await AsyncStorage.removeItem("pendingAction");
         }
-
-        // Test notification after initialization
-        setTimeout(async () => {
-          try {
-            await notifications.showTestNotification();
-            console.log("✅ Test notification sent after initialization");
-          } catch (error) {
-            console.error("❌ Failed to send test notification:", error);
-          }
-        }, 2000);
-      } catch (error) {
-        console.error(
-          "Failed to initialize notifications in focus component:",
-          error
-        );
-      }
+      } catch (_) {}
     };
-
-    initializeNotifications();
+    init();
   }, []);
 
-  const handleSessionStart = async () => {
-    resumeSession();
-
-    // Schedule session end notification
-    await notifications.scheduleSessionEndNotification(
-      sessionType,
-      durationMinutes
-    );
-
-    // Schedule break reminder
-    // await notifications.scheduleBreakReminder(durationMinutes);
-  };
-
-  const handleSessionEnd = async () => {
-    await notifications.cancelAllNotifications();
-
-    // Check for current streak milestones
-    await notifications.showStreakMilestoneNotification(currentStreak);
-  };
-
-  // Handle session pause/resume notifications
   useEffect(() => {
     if (isPaused && !prevIsRunning.current) {
-      // Session was just paused
       notifications.showSessionPauseNotification();
       notifications.updateSessionState(false, true);
     } else if (isRunning && prevIsRunning.current === false) {
-      // Session was just resumed
-      if (!isNewSession) {
-        notifications.showSessionResumeNotification();
-        console.log("In here");
-      }
+      if (!isNewSession) notifications.showSessionResumeNotification();
       notifications.updateSessionState(true, false);
     } else if (!isRunning && prevIsRunning.current) {
-      // Session ended
       notifications.updateSessionState(false, false);
     }
   }, [isRunning, isPaused, isNewSession]);
 
-  // Handle session start notification for new sessions
   useEffect(() => {
-
     if (isRunning && isNewSession) {
       notifications.showSessionStartNotification(sessionType, durationMinutes);
     }
   }, [isRunning, isNewSession, sessionType, durationMinutes]);
 
-  // Session pause/resume notifications are now handled by the notification hook
-
+  // ── Session completion tracking ───────────────────────────────────────────
   useEffect(() => {
-    // Show quote modal at meaningful moments
-    if (!isRunning || !currentSessionId) {
-      return;
+    if (
+      prevIsRunning.current &&
+      !isRunning &&
+      currentSessionId !== prevSessionId.current &&
+      !currentFlowId &&
+      !showFlowCompletionModal
+    ) {
+      setShowSessionComplete(true);
     }
+    prevSessionId.current = currentSessionId;
+    prevIsRunning.current = isRunning;
+  }, [isRunning, currentSessionId, currentFlowId, showFlowCompletionModal]);
 
-    const now = Date.now();
-    const shouldShowQuote = () => {
-      // Don't show if we just showed a quote recently (within 5 minutes)
-      if (now - lastFlowContext.current.lastQuoteTime < 5 * 60 * 1000) {
-        return false;
-      }
+  // ── Handlers ──────────────────────────────────────────────────────────────
+  const handleSessionStart = async () => {
+    resumeSession();
+    await notifications.scheduleSessionEndNotification(
+      sessionType,
+      durationMinutes,
+    );
+  };
 
-      // Show quote when:
-      // 1. Starting a new flow (flow changed)
-      // 2. First session of the day (last quote was more than 12 hours ago)
-      // 3. After a long break (coming back from >1 hour of inactivity)
-      return (
-        currentFlowId !== lastFlowContext.current.flow || // New flow
-        now - lastFlowContext.current.lastQuoteTime > 12 * 60 * 60 * 1000 || // First of day
-        (lastFlowContext.current.flow && !currentFlowId) // Just finished a flow
-      );
-    };
+  const handleSessionEnd = async () => {
+    await notifications.cancelAllNotifications();
+    await notifications.showStreakMilestoneNotification(currentStreak);
+    reset();
+  };
 
-    if (currentSessionId !== lastSessionId.current) {
-      lastSessionId.current = currentSessionId;
-
-      if (shouldShowQuote()) {
-        lastFlowContext.current = {
-          flow: currentFlowId,
-          step: currentFlowStep,
-          lastQuoteTime: now,
-        };
-
-        // Small delay to ensure state is fully updated
-        const showQuote = setTimeout(() => {
-          setShowQuoteModal(true);
-
-          // Auto-close the modal after 3 seconds
-          const hideQuote = setTimeout(() => {
-            setShowQuoteModal(false);
-          }, 3000);
-
-          return () => clearTimeout(hideQuote);
-        }, 100);
-
-        return () => clearTimeout(showQuote);
-      } else {
-        // Update context without showing quote
-        lastFlowContext.current = {
-          flow: currentFlowId,
-          step: currentFlowStep,
-          lastQuoteTime: lastFlowContext.current.lastQuoteTime,
-        };
-      }
-    }
-  }, [isRunning, currentSessionId, currentFlowId, currentFlowStep]);
-
-  // Handle quote modal close
-  const handleQuoteModalClose = useCallback(() => {
-    setShowQuoteModal(false);
-  }, []);
-
-  // Handle session type selection
   const handleSessionSelect = (type: SessionType) => {
     setSessionType(type);
     setIsSessionTypeModalVisible(false);
-  };
-
-  // Flow details modal state
-  const [showFlowDetails, setShowFlowDetails] = useState(false);
-
-  // Format time as MM:SS
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-  };
-
-  const currentTaskId = useTaskStore((s) => s.currentTaskId);
-  const tasks = useTaskStore((s) => s.tasks);
-  const clearCurrentTask = useTaskStore((s) => s.clearCurrentTask);
-  const completeCurrentTask = useTaskStore((s) => s.completeCurrentTask);
-  const currentTask = tasks.find((t) => t.id === currentTaskId);
-
-  const [cardWidth] = useState(new Animated.Value(currentTask ? 320 : 120));
-
-  useEffect(() => {
-    Animated.timing(cardWidth, {
-      toValue: currentTask ? 320 : 120,
-      duration: 250,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  }, [currentTask]);
-
-  // Animate TodayProgress and Flow context when Flow state changes
-  useEffect(() => {
-    if (currentFlowId) {
-      // Fade out TodayProgress and fade in Flow context when Flow starts
-      Animated.parallel([
-        Animated.timing(flowContextAnim, {
-          toValue: 1,
-          duration: 300,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-      ]).start();
-    } else {
-      // Fade in TodayProgress and fade out Flow context when Flow ends
-      Animated.parallel([
-        Animated.timing(flowContextAnim, {
-          toValue: 0,
-          duration: 300,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-      ]).start();
-    }
-  }, [currentFlowId, flowContextAnim]);
-
-  const customFlows = useFlowStore((state) => state.customFlows);
-
-  // Restore handleFlowSelect function
-  const handleFlowSelect = (flowId: string) => {
-    startFlow(flowId);
-    setIsFlowModalVisible(false);
-  };
-
-  // Add handleCreateFlow function
-  const handleCreateFlow = () => {
-    setIsFlowModalVisible(false);
-    // Add a small delay to ensure modal closes before navigation
-    setTimeout(() => {
-      router.push("/create-flow");
-    }, 100);
-  };
-
-  // Add handleEditFlow function
-  const handleEditFlow = (flowId: string) => {
-    setIsFlowModalVisible(false);
-    // Add a small delay to ensure modal closes before navigation
-    setTimeout(() => {
-      router.push(`/create-flow?id=${flowId}`);
-    }, 100);
-  };
-
-  // --- Tabs/Indicator Animation ---
-  useEffect(() => {
-    if (currentFlowId || isRunning || isPaused) {
-      // Hide tabs (fade/slide up), show indicator (fade/slide in)
-      Animated.stagger(60, [
-        Animated.parallel([
-          Animated.timing(tabsOpacity, {
-            toValue: 0,
-            duration: 220,
-            useNativeDriver: true,
-          }),
-          Animated.timing(tabsTranslateY, {
-            toValue: -24,
-            duration: 220,
-            useNativeDriver: true,
-          }),
-        ]),
-        Animated.parallel([
-          Animated.timing(indicatorOpacity, {
-            toValue: 1,
-            duration: 220,
-            useNativeDriver: true,
-          }),
-          Animated.spring(indicatorScale, {
-            toValue: 1,
-            useNativeDriver: true,
-          }),
-          Animated.timing(indicatorTranslateY, {
-            toValue: 0,
-            duration: 220,
-            useNativeDriver: true,
-          }),
-        ]),
-      ]).start();
-    } else {
-      // Show tabs (fade/slide in), hide indicator (fade/slide down)
-      Animated.stagger(60, [
-        Animated.parallel([
-          Animated.timing(indicatorOpacity, {
-            toValue: 0,
-            duration: 220,
-            useNativeDriver: true,
-          }),
-          Animated.spring(indicatorScale, {
-            toValue: 0.95,
-            useNativeDriver: true,
-          }),
-          Animated.timing(indicatorTranslateY, {
-            toValue: 32,
-            duration: 220,
-            useNativeDriver: true,
-          }),
-        ]),
-        Animated.parallel([
-          Animated.timing(tabsOpacity, {
-            toValue: 1,
-            duration: 220,
-            useNativeDriver: true,
-          }),
-          Animated.timing(tabsTranslateY, {
-            toValue: 0,
-            duration: 220,
-            useNativeDriver: true,
-          }),
-        ]),
-      ]).start();
-    }
-  }, [
-    currentFlowId,
-    isRunning,
-    isPaused,
-    tabsOpacity,
-    indicatorOpacity,
-    indicatorScale,
-    tabsTranslateY,
-    indicatorTranslateY,
-  ]);
-
-  // --- Session Controls Animation ---
-  useEffect(() => {
-    // Only animate if we have a measured height
-    if (disappearingUIHeight === 0) return;
-    if (currentFlowId || isRunning || isPaused) {
-      // Slide session controls down by the height of the entire disappearing UI
-      Animated.timing(sessionControlsTranslateY, {
-        toValue: disappearingUIHeight,
-        duration: 320,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start();
-    } else {
-      // Slide session controls up to original position
-      Animated.timing(sessionControlsTranslateY, {
-        toValue: 0,
-        duration: 320,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [
-    currentFlowId,
-    isRunning,
-    isPaused,
-    disappearingUIHeight,
-    sessionControlsTranslateY,
-  ]);
-
-  const addJournalEntry = useJournalStore((s) => s.addEntry);
-
-  // Call this when session completes:
-  const handleSessionComplete = () => {
-    setShowSessionComplete(true);
   };
 
   const handleReflect = () => {
@@ -492,10 +348,7 @@ export default function Focus() {
     title: string;
     content: string;
   }) => {
-    addJournalEntry({
-      title,
-      blocks: [{ type: "text", content }],
-    });
+    addJournalEntry({ title, blocks: [{ type: "text", content }] });
     setShowReflect(false);
     Toast.show({
       type: "reflectionSaveToast",
@@ -505,419 +358,280 @@ export default function Focus() {
     });
   };
 
-  const handleViewInsights = () => {
-    setShowInsights(true);
+  const handleFlowSelect = (flowId: string) => {
+    startFlow(flowId);
+    setIsFlowModalVisible(false);
   };
 
-  useEffect(() => {
-    console.log(
-      "DEBUG: prevIsRunning",
-      prevIsRunning.current,
-      "isRunning",
-      isRunning,
-      "prevSessionId",
-      prevSessionId.current,
-      "currentSessionId",
-      currentSessionId,
-      "currentFlowId",
-      currentFlowId
-    );
-    if (
-      prevIsRunning.current &&
-      !isRunning &&
-      currentSessionId !== prevSessionId.current &&
-      !currentFlowId // Only trigger session completion modal for non-flow sessions
-    ) {
-      console.log("DEBUG: Triggering SessionCompletionModal");
-      handleSessionComplete();
-    }
-    prevSessionId.current = currentSessionId;
-    prevIsRunning.current = isRunning;
-  }, [isRunning, currentSessionId, currentFlowId]);
+  const handleCreateFlow = () => {
+    setIsFlowModalVisible(false);
+    setTimeout(() => router.push("/create-flow"), 100);
+  };
 
-  const [isProgressExpanded, setIsProgressExpanded] = useState(false);
-  const progressAnim = useRef(new Animated.Value(0)).current;
+  const handleEditFlow = (flowId: string) => {
+    setIsFlowModalVisible(false);
+    setTimeout(() => router.push(`/create-flow?id=${flowId}`), 100);
+  };
 
-  useEffect(() => {
-    Animated.timing(progressAnim, {
-      toValue: isProgressExpanded ? 1 : 0,
-      duration: 300,
-      useNativeDriver: false,
-    }).start();
-  }, [isProgressExpanded]);
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
 
-  // --- Add Task Button Animation ---
-  useEffect(() => {
-    if (currentFlowId || isRunning || isPaused) {
-      // Animate Add Task button opacity for flow state
-      Animated.timing(addTaskOpacity, {
-        toValue: 0.8,
-        duration: 220,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      // Animate Add Task button opacity for default state
-      Animated.timing(addTaskOpacity, {
-        toValue: 1,
-        duration: 180,
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [currentFlowId, isRunning, isPaused, addTaskOpacity]);
+  const bgColor = isActive
+    ? getSessionBg(sessionType, isDarkMode)
+    : colors.background;
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <View className="flex-1 bg-primary pb-20">
-      {/* Toast for reflection save */}
-      {/* Streak and Flow Indicator */}
-      <View className="flex-row justify-between items-center mx-4 mt-4">
-        <View
-          className="flex-row gap-2 items-center bg-white dark:bg-gray-800 rounded-xl px-4 py-3 border border-gray-100 dark:border-gray-700"
-          style={{
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.08,
-            shadowRadius: 8,
-            elevation: 4,
-          }}
-        >
-          <View className="flex-row items-center gap-2">
-            <View className="w-1.5 h-1.5 bg-orange-500 rounded-full" />
-            <Streak width={20} />
-            <Text className="text-text-primary text-sm font-SoraSemiBold">
-              {currentStreak} day streak
-            </Text>
-          </View>
-        </View>
+    <View style={[styles.container, { backgroundColor: bgColor }]}>
+      {/* Flow progress bar */}
+      <View style={styles.progressTrack}>
+        {currentFlowId && (
+          <View
+            style={[
+              styles.progressFill,
+              {
+                backgroundColor: colors.accent,
+                width: `${Math.round(flowProgress * 100)}%`,
+              },
+            ]}
+          />
+        )}
       </View>
 
-      <View className="flex-1">
-        {/* Main Content */}
+      {/* Header — idle only */}
+      <Animated.View
+        style={[styles.header, idleStyle]}
+        pointerEvents={isActive ? "none" : "auto"}
+      >
+        <View
+          style={[
+            styles.streakChip,
+            {
+              backgroundColor: colors.surfaceMuted,
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          <Streak width={14} height={14} />
+          <Text style={[styles.streakText, { color: colors.textSecondary }]}>
+            {currentStreak}d streak
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => setIsFlowModalVisible(true)}
+          style={[
+            styles.flowsChip,
+            {
+              backgroundColor: colors.accentMuted,
+              borderColor: colors.accent + "60",
+            },
+          ]}
+        >
+          <Text style={[styles.flowsChipText, { color: colors.accent }]}>
+            Flows
+          </Text>
+        </TouchableOpacity>
+      </Animated.View>
 
-        <View className="flex-1 items-center px-4">
-          {/* Session Type and Flow Selector (original position) */}
-          <View className="w-full max-w-md mt-4 mb-4">
-            <Animated.View
-              style={{
-                opacity: tabsOpacity,
-                transform: [{ translateY: tabsTranslateY }],
-                position: "absolute",
-                width: "100%",
-                zIndex: 2,
-                pointerEvents:
-                  currentFlowId || isRunning || isPaused ? "none" : "auto",
-              }}
-            >
-              <View className="flex-row items-center justify-between w-full">
-                {/* Session Intelligence Tab */}
-                <View className="relative z-10 flex-1">
-                  <Pressable
-                    onPress={() => setIsSessionTypeModalVisible(true)}
-                    className="flex-row items-center justify-between gap-3 bg-white dark:bg-gray-800 rounded-xl px-4 py-3 border border-gray-100 dark:border-gray-700"
-                    style={{
-                      shadowColor: "#000",
-                      shadowOffset: { width: 0, height: 2 },
-                      shadowOpacity: 0.08,
-                      shadowRadius: 8,
-                      elevation: 4,
-                    }}
-                  >
-                    <View className="flex-row items-center  gap-2">
-                      <View className="w-1.5 h-1.5 bg-purple-500 rounded-full" />
-                      <Text className="text-text-primary text-base font-SoraSemiBold">
-                        Session Intelligence
-                      </Text>
-                    </View>
-                    <ChevronDown width={16} height={16} color="#2C3E50" />
-                  </Pressable>
-                </View>
-                {/* Flows Tab */}
+      {/* Timer */}
+      <View style={styles.timerArea}>
+        <Text style={[styles.sessionLabel, { color: colors.textSecondary }]}>
+          {SESSION_META[sessionType]?.emoji} {SESSION_META[sessionType]?.label}
+        </Text>
+        <TouchableOpacity
+          onPress={() =>
+            !isRunning && !isPaused && !currentFlowId
+              ? setIsTimeModalVisible(true)
+              : null
+          }
+          activeOpacity={isRunning || isPaused ? 1 : 0.7}
+        >
+          <Animated.View style={timerStyle}>
+            <Text style={[styles.timer, { color: colors.textPrimary }]}>
+              {formatTime(duration)}
+            </Text>
+          </Animated.View>
+        </TouchableOpacity>
+        <Animated.View style={idleStyle} pointerEvents="none">
+          <Text style={[styles.durationHint, { color: colors.textSecondary }]}>
+            {durationMinutes} min · tap to adjust
+          </Text>
+        </Animated.View>
+      </View>
+
+      {/* Controls */}
+      <View style={styles.controlsWrap}>
+        {/* IDLE */}
+        <Animated.View
+          style={[styles.controls, idleControlStyle]}
+          pointerEvents={isActive ? "none" : "auto"}
+        >
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipRow}
+          >
+            {SESSION_CHIP_ORDER.map((type) => {
+              const sel = sessionType === type;
+              return (
                 <TouchableOpacity
-                  onPress={() => setIsFlowModalVisible(true)}
-                  className="ml-4 bg-white dark:bg-gray-800 rounded-xl px-4 py-3 border border-gray-100 dark:border-gray-700"
-                  style={{
-                    shadowColor: "#000",
-                    shadowOffset: { width: 0, height: 2 },
-                    shadowOpacity: 0.08,
-                    shadowRadius: 8,
-                    elevation: 4,
-                  }}
+                  key={type}
+                  onPress={() => setSessionType(type)}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: sel
+                        ? colors.accentMuted
+                        : colors.surfaceMuted,
+                      borderColor: sel ? colors.accent : colors.border,
+                    },
+                  ]}
                 >
-                  <View className="flex-row items-center gap-2">
-                    <View className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
-                    <Text className="text-blue-600 dark:text-blue-400 text-sm font-SoraSemiBold">
-                      Flows
-                    </Text>
-                  </View>
+                  <Text style={styles.chipEmoji}>
+                    {SESSION_META[type].emoji}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.chipLabel,
+                      { color: sel ? colors.accent : colors.textSecondary },
+                    ]}
+                  >
+                    {SESSION_META[type].label}
+                  </Text>
                 </TouchableOpacity>
-              </View>
-            </Animated.View>
-            <Animated.View
-              style={{
-                opacity: indicatorOpacity,
-                transform: [
-                  { scale: indicatorScale },
-                  { translateY: indicatorTranslateY },
-                ],
-                width: "100%",
-                zIndex: 3,
-                position: "absolute",
-                pointerEvents:
-                  !currentFlowId && !isRunning && !isPaused ? "none" : "auto",
-              }}
+              );
+            })}
+          </ScrollView>
+
+          {currentTask ? (
+            <TouchableOpacity
+              onPress={() => setIsQuickTaskModalVisible(true)}
+              style={[
+                styles.taskStrip,
+                {
+                  backgroundColor: colors.surfaceMuted,
+                  borderColor: colors.border,
+                },
+              ]}
             >
-              {currentFlowId ? (
-                <View className="w-full px-4">
-                  <FlowIndicator
-                    currentFlowId={currentFlowId}
-                    currentFlowStep={currentFlowStep}
-                    sessionType={sessionType}
-                    onPress={() => setShowFlowDetails(true)}
-                  />
-                </View>
-              ) : (
-                <View className="w-full px-4">
-                  <View className="w-full max-w-md">
-                    <SessionIndicator
-                      sessionType={sessionType}
-                      duration={duration}
-                      isRunning={isRunning}
-                      isPaused={isPaused}
-                      onPress={() => setIsSessionTypeModalVisible(true)}
-                    />
-                  </View>
-                </View>
-              )}
-            </Animated.View>
+              <View
+                style={[
+                  styles.dot,
+                  { backgroundColor: taskTagColor(currentTask.tag) },
+                ]}
+              />
+              <Text
+                style={[styles.taskName, { color: colors.textPrimary }]}
+                numberOfLines={1}
+              >
+                {currentTask.name}
+              </Text>
+              <TouchableOpacity onPress={clearCurrentTask} hitSlop={10}>
+                <Ionicons name="close" size={16} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              onPress={() => setIsQuickTaskModalVisible(true)}
+              style={[styles.addTaskBtn, { borderColor: colors.border }]}
+            >
+              <Ionicons name="add" size={16} color={colors.textSecondary} />
+              <Text
+                style={[styles.addTaskText, { color: colors.textSecondary }]}
+              >
+                Add task
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          <View style={styles.startWrap}>
+            <StartSessionBtn
+              onStart={handleSessionStart}
+              onPause={pauseSession}
+              onReset={handleSessionEnd}
+            />
           </View>
 
-          {/* Spacer to push content up */}
-          <Animated.View
-            style={{
-              flex: 1,
-              justifyContent: "center",
-              alignItems: "center",
-              transform: [
-                {
-                  translateY: progressAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, -100],
-                  }),
-                },
-              ],
-            }}
+          <TouchableOpacity
+            onPress={() => setIsSessionTypeModalVisible(true)}
+            style={styles.intelLink}
           >
-            {/* Timer Display & Controls with animation */}
-            <Animated.View
-              style={{
-                transform: [{ translateY: sessionControlsTranslateY }],
-                width: "100%",
-                alignItems: "center",
-              }}
+            <Text
+              style={[styles.intelLinkText, { color: colors.textSecondary }]}
             >
-              <View className="items-center mb-8">
-                <View
-                  className="bg-white dark:bg-gray-800 rounded-2xl px-8 py-6 border border-gray-100 dark:border-gray-700"
-                  style={{
-                    shadowColor: "#000",
-                    shadowOffset: { width: 0, height: 4 },
-                    shadowOpacity: 0.1,
-                    shadowRadius: 12,
-                    elevation: 6,
-                  }}
-                >
-                  <TouchableOpacity
-                    onPress={() =>
-                      !isRunning &&
-                      !isPaused &&
-                      !currentFlowId &&
-                      setIsTimeModalVisible(true)
-                    }
-                    activeOpacity={
-                      currentFlowId || isRunning || isPaused ? 1 : 0.8
-                    }
-                    className="items-center"
-                  >
-                    <Text className="text-text-primary text-7xl font-SoraBold mb-3">
-                      {formatTime(duration)}
-                    </Text>
-                    {!currentFlowId && !isRunning && !isPaused && (
-                      <View className="flex-row items-center justify-center gap-3">
-                        <View className="bg-gray-100 dark:bg-gray-700 rounded-full px-4 py-2">
-                          <Text className="text-text-secondary text-sm font-SoraSemiBold">
-                            {durationMinutes} min
-                          </Text>
-                        </View>
-                        <View className="bg-blue-500/10 rounded-full p-2 border border-blue-500/20">
-                          <Edit width={16} height={16} color="#3B82F6" />
-                        </View>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
+              ✦ Session Intelligence
+            </Text>
+          </TouchableOpacity>
+        </Animated.View>
 
-              {/* Start/Pause Button */}
-              <View className="w-full items-center">
-                <View className="w-32">
-                  <StartSessionBtn
-                    onStart={handleSessionStart}
-                    onPause={pauseSession}
-                    onReset={handleSessionEnd}
-                  />
-                </View>
-              </View>
-
-              {/* Add Task Button */}
-              <View className="w-full items-center mt-6">
-                {/* Outer Animated.View for width (JS driver) */}
-                <Animated.View
-                  style={{
-                    width: currentTask ? 320 : 120,
-                    transform: [{ translateY: 65 }],
-                    opacity: addTaskOpacity,
-                  }}
-                >
-                  {/* Inner Animated.View for opacity (native driver) */}
-                  <Animated.View
-                    style={{
-                      opacity: addTaskOpacity,
-                    }}
-                  >
-                    {currentTask ? (
-                      <TouchableOpacity
-                        onPress={() => setIsQuickTaskModalVisible(true)}
-                        activeOpacity={0.9}
-                        className={`flex-row items-center justify-between rounded-full px-5 py-3 shadow-sm ${
-                          currentFlowId
-                            ? "bg-white dark:bg-gray-800 border-2 border-blue-200 dark:border-blue-700"
-                            : "bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600"
-                        }`}
-                        style={{
-                          minHeight: 48,
-                          shadowColor: currentFlowId ? "#3B82F6" : "#000",
-                          shadowOffset: { width: 0, height: 2 },
-                          shadowOpacity: currentFlowId ? 0.15 : 0.08,
-                          shadowRadius: currentFlowId ? 12 : 8,
-                          elevation: currentFlowId ? 6 : 4,
-                        }}
-                      >
-                        <View className="flex-row items-center gap-2 flex-1">
-                          {!currentFlowId && (
-                            <View className="flex-row items-center gap-1.5 bg-gray-100 dark:bg-gray-700 rounded-full px-2 py-0.5 mr-1">
-                              <View className="w-1 h-1 bg-gray-500 rounded-full" />
-                              <Text className="text-gray-600 dark:text-gray-400 text-xs font-SoraSemiBold">
-                                Task
-                              </Text>
-                            </View>
-                          )}
-                          <View
-                            className={`w-2.5 h-2.5 rounded-full ${
-                              currentTask.tag === "urgent"
-                                ? "bg-red-500"
-                                : currentTask.tag === "important"
-                                  ? "bg-amber-500"
-                                  : currentTask.tag === "quickwin"
-                                    ? "bg-green-500"
-                                    : currentTask.tag === "deepwork"
-                                      ? "bg-blue-500"
-                                      : "bg-gray-300"
-                            }`}
-                          />
-                          <Text
-                            className={`text-text-primary text-base font-SoraSemiBold ${currentTask.completed ? "line-through text-gray-400" : ""}`}
-                          >
-                            {currentTask.name}
-                          </Text>
-                        </View>
-                        <View className="flex-row items-center gap-2">
-                          {!currentTask.completed && (
-                            <TouchableOpacity
-                              onPress={(e) => {
-                                e.stopPropagation();
-                                completeCurrentTask();
-                              }}
-                              className="bg-green-500 rounded-full p-2"
-                              accessibilityLabel="Mark as complete"
-                            >
-                              <Ionicons
-                                name="checkmark"
-                                size={18}
-                                color="#fff"
-                              />
-                            </TouchableOpacity>
-                          )}
-                          <TouchableOpacity
-                            onPress={(e) => {
-                              e.stopPropagation();
-                              clearCurrentTask();
-                            }}
-                            className="bg-gray-100 dark:bg-gray-700 rounded-full p-2 ml-1"
-                            accessibilityLabel="Clear task"
-                          >
-                            <Ionicons name="close" size={18} color="#888" />
-                          </TouchableOpacity>
-                        </View>
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity
-                        onPress={() => setIsQuickTaskModalVisible(true)}
-                        className={`flex-row items-center justify-center rounded-full px-6 py-3 shadow-sm ${
-                          isRunning && !isPaused
-                            ? "bg-blue-600 border-2 border-blue-700"
-                            : "bg-white dark:bg-gray-800 border border-blue-500"
-                        }`}
-                        style={{ minHeight: 48 }}
-                        activeOpacity={0.85}
-                        disabled={isRunning && !isPaused}
-                      >
-                        {isRunning && !isPaused ? (
-                          <>
-                            <Ionicons
-                              name="lock-closed"
-                              size={20}
-                              color="#fff"
-                            />
-                            <Text className="text-white text-base font-SoraSemiBold ml-2">
-                              Focus
-                            </Text>
-                          </>
-                        ) : (
-                          <>
-                            <Ionicons name="add" size={20} color="#2563EB" />
-                            <Text className="text-blue-600 dark:text-blue-400 text-base font-SoraSemiBold ml-2">
-                              Add Task
-                            </Text>
-                          </>
-                        )}
-                      </TouchableOpacity>
-                    )}
-                  </Animated.View>
-                </Animated.View>
-              </View>
-            </Animated.View>
-          </Animated.View>
-        </View>
-
-        {/* Bottom Section */}
-        <View className="w-full rounded-t-3xl px-6 pt-6 pb-8">
-          {/* Flow Context Label */}
-          {currentFlowId && currentTask && (
-            <Animated.View
-              className="w-full items-center mb-2"
-              style={{
-                opacity: flowContextAnim,
-                transform: [{ scale: flowContextAnim }],
-              }}
+        {/* ACTIVE */}
+        <Animated.View
+          style={[styles.controls, styles.activeControls, activeControlStyle]}
+          pointerEvents={!isActive ? "none" : "auto"}
+        >
+          <View style={styles.activeBtnRow}>
+            <TouchableOpacity
+              onPress={isPaused ? handleSessionStart : pauseSession}
+              style={[
+                styles.activeBtn,
+                styles.activeBtnPrimary,
+                { backgroundColor: colors.accent },
+              ]}
             >
-              <View className="flex-row items-center gap-2 bg-blue-50 dark:bg-blue-900/20 rounded-full px-4 py-2 border border-blue-100 dark:border-blue-800/50">
-                <View className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
-                <Text className="text-blue-600 dark:text-blue-400 text-sm font-SoraSemiBold">
-                  Current Focus
-                </Text>
-              </View>
-            </Animated.View>
+              <Ionicons
+                name={isPaused ? "play" : "pause"}
+                size={20}
+                color="#fff"
+              />
+              <Text style={styles.activeBtnLabel}>
+                {isPaused ? "Resume" : "Pause"}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleSessionEnd}
+              style={[
+                styles.activeBtn,
+                {
+                  backgroundColor: colors.surfaceMuted,
+                  borderColor: colors.border,
+                  borderWidth: 1,
+                },
+              ]}
+            >
+              <Ionicons name="stop" size={20} color={colors.textSecondary} />
+              <Text
+                style={[styles.activeBtnMuted, { color: colors.textSecondary }]}
+              >
+                Stop
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {currentTask && (
+            <View
+              style={[styles.activeTaskRow, { borderTopColor: colors.border }]}
+            >
+              <View
+                style={[
+                  styles.dot,
+                  { backgroundColor: taskTagColor(currentTask.tag) },
+                ]}
+              />
+              <Text
+                style={[styles.taskName, { color: colors.textSecondary }]}
+                numberOfLines={1}
+              >
+                {currentTask.name}
+              </Text>
+              <TouchableOpacity onPress={completeCurrentTask} hitSlop={10}>
+                <Ionicons name="checkmark" size={16} color={colors.accent} />
+              </TouchableOpacity>
+            </View>
           )}
-        </View>
+        </Animated.View>
       </View>
 
       {/* Modals */}
@@ -926,18 +640,15 @@ export default function Focus() {
         onClose={() => setIsTimeModalVisible(false)}
         sessionType={sessionType}
       />
-
       <QuickTaskModal
         isVisible={isQuickTaskModalVisible}
         onClose={() => setIsQuickTaskModalVisible(false)}
       />
-
       <SessionIntelligenceModal
         isVisible={isSessionTypeModalVisible}
         onClose={() => setIsSessionTypeModalVisible(false)}
         onSelectSession={handleSessionSelect}
       />
-
       {currentFlowId && (
         <FlowDetailsModal
           visible={showFlowDetails}
@@ -946,22 +657,16 @@ export default function Focus() {
           currentStep={currentFlowStep}
         />
       )}
-
-      {/* Quote Modal */}
       {showQuoteModal && <QuoteCard onClose={handleQuoteModalClose} />}
-
-      {/* Flow Completion Modal */}
       {showFlowCompletionModal && flowCompletionData && (
         <FlowCompletionModal
           isVisible={showFlowCompletionModal}
-          onClose={() => {}} // Empty function since modal handles its own actions
+          onClose={() => {}}
           data={flowCompletionData}
           onReflect={handleReflect}
-          onViewInsights={handleViewInsights}
+          onViewInsights={() => setShowInsights(true)}
         />
       )}
-
-      {/* Flow Selection Modal */}
       <FlowsModal
         isVisible={isFlowModalVisible}
         onClose={() => setIsFlowModalVisible(false)}
@@ -969,7 +674,6 @@ export default function Focus() {
         onCreateFlow={handleCreateFlow}
         onEditFlow={handleEditFlow}
       />
-
       <SessionCompletionModal
         isVisible={showSessionComplete}
         onClose={() => setShowSessionComplete(false)}
@@ -979,7 +683,7 @@ export default function Focus() {
           streak: currentStreak || 0,
         }}
         onReflect={handleReflect}
-        onViewInsights={handleViewInsights}
+        onViewInsights={() => setShowInsights(true)}
       />
       <AddJournalModal
         isVisible={showReflect}
@@ -994,3 +698,138 @@ export default function Focus() {
     </View>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  progressTrack: { height: 4, width: "100%" },
+  progressFill: { height: 4, borderRadius: 2 },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 4,
+  },
+  streakChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  streakText: { fontSize: 12, fontFamily: "SoraSemiBold" },
+  flowsChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  flowsChipText: { fontSize: 12, fontFamily: "SoraSemiBold" },
+  timerArea: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+  sessionLabel: {
+    fontSize: 15,
+    fontFamily: "SoraSemiBold",
+    marginBottom: 16,
+    letterSpacing: 0.4,
+  },
+  timer: {
+    fontSize: 88,
+    fontFamily: "SoraBold",
+    letterSpacing: -3,
+    includeFontPadding: false,
+    lineHeight: 96,
+    textAlign: "center",
+  },
+  durationHint: {
+    fontSize: 13,
+    fontFamily: "Sora",
+    marginTop: 12,
+    letterSpacing: 0.2,
+  },
+  controlsWrap: { height: 250, marginBottom: 104 },
+  controls: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    paddingHorizontal: 24,
+    gap: 12,
+    justifyContent: "flex-start",
+    paddingTop: 4,
+  },
+  activeControls: { justifyContent: "center" },
+  chipRow: { gap: 8 },
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 24,
+    borderWidth: 1,
+  },
+  chipEmoji: { fontSize: 14 },
+  chipLabel: { fontSize: 13, fontFamily: "SoraSemiBold" },
+  taskStrip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    width: "100%",
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  taskName: { flex: 1, fontSize: 14, fontFamily: "SoraSemiBold" },
+  addTaskBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    borderRadius: 22,
+    borderWidth: 1,
+  },
+  addTaskText: { fontSize: 13, fontFamily: "Sora" },
+  startWrap: { width: 150 },
+  intelLink: { paddingVertical: 4 },
+  intelLinkText: { fontSize: 13, fontFamily: "Sora", letterSpacing: 0.3 },
+  activeBtnRow: {
+    flexDirection: "row",
+    gap: 12,
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  activeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+    borderRadius: 32,
+    minWidth: 130,
+    justifyContent: "center",
+  },
+  activeBtnPrimary: {},
+  activeBtnLabel: { color: "#fff", fontSize: 15, fontFamily: "SoraSemiBold" },
+  activeBtnMuted: { fontSize: 15, fontFamily: "SoraSemiBold" },
+  activeTaskRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    width: "100%",
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+});

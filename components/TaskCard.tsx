@@ -1,8 +1,15 @@
+import { useTheme } from "@/context/ThemeContext";
 import { Task, TaskTag } from "@/store/taskStore";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import React, { useRef } from "react";
-import { Animated, Text, TouchableOpacity, View } from "react-native";
+import {
+  Animated,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 
 interface TaskCardProps {
@@ -15,12 +22,12 @@ interface TaskCardProps {
   isActive?: boolean;
 }
 
-const tagColor: Record<Exclude<TaskTag, null> | "default", string> = {
-  urgent: "#EF4444", // red
-  important: "#F59E42", // orange
-  quickwin: "#22C55E", // green
-  deepwork: "#2563EB", // blue
-  default: "#E5E7EB", // gray
+export const TAG_COLOR: Record<Exclude<TaskTag, null> | "default", string> = {
+  urgent: "#E05A5A",
+  important: "#E8A43A",
+  deepwork: "#5B8DEF",
+  quickwin: "#4CAF7D",
+  default: "#8A8A96",
 };
 
 export default function TaskCard({
@@ -32,110 +39,92 @@ export default function TaskCard({
   disabled,
   isActive,
 }: TaskCardProps) {
+  const { colors } = useTheme();
   const swipeableRef = useRef<Swipeable>(null);
+  const dotColor = TAG_COLOR[task.tag ?? "default"];
 
-  // Render left (delete) action - iPhone Messages style
   const renderLeftActions = (
     progress: Animated.Value,
-    dragX: Animated.Value
+    dragX: Animated.Value,
   ) => {
     const trans = dragX.interpolate({
       inputRange: [0, 50, 100, 101],
       outputRange: [-20, 0, 0, 1],
       extrapolate: "clamp",
     });
-
     const scale = progress.interpolate({
       inputRange: [0, 1],
       outputRange: [0.8, 1],
       extrapolate: "clamp",
     });
-
     return (
-      <View
-        className="flex-row items-center justify-start"
-        style={{ width: 100 }}
-      >
+      <View style={{ width: 80, justifyContent: "center" }}>
         <Animated.View
-          style={{
-            transform: [{ translateX: trans }, { scale }],
-            width: 80,
-            height: "100%",
-            justifyContent: "center",
-            alignItems: "center",
-            backgroundColor: "#EF4444",
-            borderTopRightRadius: 16,
-            borderBottomRightRadius: 16,
-            marginRight: 4,
-          }}
+          style={[
+            s.swipeAction,
+            {
+              transform: [{ translateX: trans }, { scale }],
+              backgroundColor: colors.destructive,
+              borderTopRightRadius: 16,
+              borderBottomRightRadius: 16,
+            },
+          ]}
         >
           <TouchableOpacity
-            className="flex-1 items-center justify-center w-full"
+            style={s.swipeBtn}
             onPress={() => {
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
               onDelete(task);
               swipeableRef.current?.close();
             }}
-            accessibilityLabel="Delete task"
-            activeOpacity={0.7}
           >
-            <Ionicons name="trash" size={20} color="#fff" />
-            <Text className="text-white text-xs font-SoraSemiBold mt-1">
-              Delete
-            </Text>
+            <Ionicons name="trash" size={18} color="#fff" />
+            <Text style={s.swipeLabelWhite}>Delete</Text>
           </TouchableOpacity>
         </Animated.View>
       </View>
     );
   };
 
-  // Render right (edit) action - iPhone Messages style
   const renderRightActions = (
     progress: Animated.Value,
-    dragX: Animated.Value
+    dragX: Animated.Value,
   ) => {
     const trans = dragX.interpolate({
       inputRange: [-101, -100, -50, 0],
       outputRange: [-1, 0, 0, 20],
       extrapolate: "clamp",
     });
-
     const scale = progress.interpolate({
       inputRange: [0, 1],
       outputRange: [0.8, 1],
       extrapolate: "clamp",
     });
-
     return (
       <View
-        className="flex-row items-center justify-end"
-        style={{ width: 100 }}
+        style={{ width: 80, justifyContent: "center", alignItems: "flex-end" }}
       >
         <Animated.View
-          style={{
-            transform: [{ translateX: trans }, { scale }],
-            width: 80,
-            height: "100%",
-            justifyContent: "center",
-            alignItems: "center",
-            backgroundColor: "#2563EB",
-            borderTopLeftRadius: 16,
-            borderBottomLeftRadius: 16,
-            marginLeft: 4,
-          }}
+          style={[
+            s.swipeAction,
+            {
+              transform: [{ translateX: trans }, { scale }],
+              backgroundColor: colors.surfaceMuted,
+              borderTopLeftRadius: 16,
+              borderBottomLeftRadius: 16,
+            },
+          ]}
         >
           <TouchableOpacity
-            className="flex-1 items-center justify-center w-full"
+            style={s.swipeBtn}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               onEdit(task);
               swipeableRef.current?.close();
             }}
-            accessibilityLabel="Edit task"
-            activeOpacity={0.7}
           >
-            <Ionicons name="pencil" size={20} color="#fff" />
-            <Text className="text-white text-xs font-SoraSemiBold mt-1">
+            <Ionicons name="pencil" size={18} color={colors.textSecondary} />
+            <Text style={[s.swipeLabel, { color: colors.textSecondary }]}>
               Edit
             </Text>
           </TouchableOpacity>
@@ -145,7 +134,7 @@ export default function TaskCard({
   };
 
   return (
-    <View className="mb-4">
+    <View style={s.wrap}>
       <Swipeable
         ref={swipeableRef}
         renderLeftActions={renderLeftActions}
@@ -155,67 +144,79 @@ export default function TaskCard({
         leftThreshold={40}
         rightThreshold={40}
         friction={2}
-        enableTrackpadTwoFingerGesture
-        containerStyle={{
-          borderRadius: 16,
-          overflow: "hidden",
-        }}
+        containerStyle={{ borderRadius: 16, overflow: "hidden" }}
       >
         <View
-          className={`flex-row items-center bg-white dark:bg-gray-800 rounded-2xl py-5 px-4 shadow-sm ${task.completed ? "opacity-60" : ""} ${isActive ? "border-2 border-green-500" : ""}`}
-          style={{
-            borderRightColor: tagColor[task.tag ?? "default"],
-            borderRightWidth: 6,
-            minHeight: 72,
-          }}
+          style={[
+            s.card,
+            {
+              backgroundColor: colors.surface,
+              borderColor: isActive ? colors.accent : colors.border,
+              opacity: task.completed ? 0.55 : 1,
+            },
+          ]}
         >
+          {/* Tag color dot */}
+          <View style={[s.dot, { backgroundColor: dotColor }]} />
+
+          {/* Complete toggle */}
           <TouchableOpacity
-            className="mr-3"
+            style={s.checkBtn}
             onPress={() => onComplete(task)}
             disabled={task.completed}
-            accessibilityLabel={
-              task.completed ? "Task completed" : "Mark as complete"
-            }
           >
             {task.completed ? (
-              <Ionicons name="checkmark-circle" size={28} color="#22C55E" />
+              <Ionicons
+                name="checkmark-circle"
+                size={22}
+                color={colors.accent}
+              />
             ) : (
-              <Ionicons name="ellipse-outline" size={28} color="#CBD5E1" />
+              <Ionicons
+                name="ellipse-outline"
+                size={22}
+                color={colors.border}
+              />
             )}
           </TouchableOpacity>
 
-          <View className="flex-1">
+          {/* Name + active badge */}
+          <View style={s.nameWrap}>
             <Text
-              className={`text-lg font-SoraSemiBold text-text-primary ${task.completed ? "line-through text-gray-400" : ""}`}
+              style={[
+                s.name,
+                {
+                  color: task.completed
+                    ? colors.textSecondary
+                    : colors.textPrimary,
+                  textDecorationLine: task.completed ? "line-through" : "none",
+                },
+              ]}
               numberOfLines={1}
             >
               {task.name}
             </Text>
             {isActive && (
-              <View className="flex-row items-center mt-1">
-                <View className="bg-green-500 rounded-full px-2 py-0.5">
-                  <Text className="text-white text-xs font-SoraSemiBold">
-                    Active
-                  </Text>
-                </View>
+              <View
+                style={[s.activeBadge, { backgroundColor: colors.accentMuted }]}
+              >
+                <Text style={[s.activeBadgeText, { color: colors.accent }]}>
+                  Active
+                </Text>
               </View>
             )}
           </View>
 
+          {/* Play button */}
           <TouchableOpacity
-            className="ml-3 p-2 rounded-full"
+            style={s.playBtn}
             onPress={() => onPlay(task)}
             disabled={task.completed || disabled}
-            accessibilityLabel="Focus on task"
           >
             <Ionicons
               name="play"
-              size={24}
-              color={
-                task.completed || disabled
-                  ? "#CBD5E1"
-                  : tagColor[task.tag ?? "default"]
-              }
+              size={18}
+              color={task.completed || disabled ? colors.border : dotColor}
             />
           </TouchableOpacity>
         </View>
@@ -223,3 +224,45 @@ export default function TaskCard({
     </View>
   );
 }
+
+const s = StyleSheet.create({
+  wrap: { marginBottom: 8 },
+  card: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    minHeight: 62,
+    gap: 10,
+  },
+  dot: { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
+  checkBtn: { padding: 2 },
+  nameWrap: { flex: 1 },
+  name: { fontSize: 15, fontFamily: "SoraSemiBold", lineHeight: 20 },
+  activeBadge: {
+    alignSelf: "flex-start",
+    marginTop: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 20,
+  },
+  activeBadgeText: { fontSize: 11, fontFamily: "SoraSemiBold" },
+  playBtn: { padding: 6, borderRadius: 20 },
+  swipeAction: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    width: 76,
+  },
+  swipeBtn: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
+    gap: 4,
+  },
+  swipeLabelWhite: { color: "#fff", fontSize: 11, fontFamily: "SoraSemiBold" },
+  swipeLabel: { fontSize: 11, fontFamily: "SoraSemiBold" },
+});

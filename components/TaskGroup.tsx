@@ -1,7 +1,8 @@
+import { useTheme } from "@/context/ThemeContext";
 import { Task, TaskTag, useTaskStore } from "@/store/taskStore";
 import React from "react";
-import { Text, View } from "react-native";
-import TaskCard from "./TaskCard";
+import { StyleSheet, Text, View } from "react-native";
+import TaskCard, { TAG_COLOR } from "./TaskCard";
 
 interface TaskGroupProps {
   label: string;
@@ -13,14 +14,6 @@ interface TaskGroupProps {
   onPlay: (task: Task) => void;
 }
 
-const labelColor: Record<Exclude<TaskTag, null> | "default", string> = {
-  urgent: "text-red-500",
-  important: "text-amber-500",
-  quickwin: "text-green-500",
-  deepwork: "text-blue-500",
-  default: "text-gray-400",
-};
-
 export default function TaskGroup({
   label,
   tag,
@@ -30,16 +23,18 @@ export default function TaskGroup({
   onComplete,
   onPlay,
 }: TaskGroupProps) {
+  const { colors } = useTheme();
   const currentTaskId = useTaskStore((state) => state.currentTaskId);
+  const dotColor = TAG_COLOR[tag ?? "default"];
 
   if (!tasks || tasks.length === 0) return null;
+
   return (
-    <View className="mb-2">
-      <Text
-        className={`text-base font-SoraSemiBold mb-2 ${labelColor[tag ?? "default"]}`}
-      >
-        {label}
-      </Text>
+    <View style={s.group}>
+      <View style={s.header}>
+        <View style={[s.labelDot, { backgroundColor: dotColor }]} />
+        <Text style={[s.label, { color: colors.textSecondary }]}>{label}</Text>
+      </View>
       {tasks.map((task) => (
         <TaskCard
           key={task.id}
@@ -54,3 +49,20 @@ export default function TaskGroup({
     </View>
   );
 }
+
+const s = StyleSheet.create({
+  group: { marginBottom: 16 },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 8,
+  },
+  labelDot: { width: 6, height: 6, borderRadius: 3 },
+  label: {
+    fontSize: 11,
+    fontFamily: "SoraSemiBold",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+});

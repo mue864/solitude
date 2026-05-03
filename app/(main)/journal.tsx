@@ -1,125 +1,342 @@
-import BackgroundEventTest from "@/components/BackgroundEventTest";
-import NotificationTestSimple from "@/components/NotificationTestSimple";
+import { useTheme } from "@/context/ThemeContext";
+import { useJournalStore, type JournalEntry } from "@/store/journalStore";
 import { Ionicons } from "@expo/vector-icons";
+import { format, parseISO } from "date-fns";
 import { useRouter } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
 import {
   FlatList,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
-import Ring from "../../assets/svg/Add_ring_white.svg";
-import JournalNoteCard from "../../components/JournalNoteCard";
-import { useJournalStore } from "../../store/journalStore";
-
-// Define a type for journal entry if not already defined
-// import { JournalEntry } from "../../types"; // Uncomment and use if you have a type
-
-type JournalEntry = any; // Replace with your actual type if available
 
 export default function Journal() {
+  const { colors } = useTheme();
   const router = useRouter();
   const entries = useJournalStore((s) => s.entries);
   const [search, setSearch] = useState("");
 
-  const filteredEntries = useMemo(() => {
+  const filtered = useMemo(() => {
     if (!search.trim()) return entries;
     const q = search.trim().toLowerCase();
-    return entries.filter((item) => {
-      const title = (item.title || "").toLowerCase();
-      const textBlock = item.blocks?.find((b) => b.type === "text");
-      const content = (textBlock?.content || "").toLowerCase();
-      return title.includes(q) || content.includes(q);
+    return entries.filter((e) => {
+      const title = (e.title || "").toLowerCase();
+      const text =
+        (
+          e.blocks?.find((b) => b.type === "text") as any
+        )?.content?.toLowerCase() ?? "";
+      return title.includes(q) || text.includes(q);
     });
   }, [entries, search]);
 
-  const handleNewNote = useCallback(() => {
-    router.push("/journalEditor");
-  }, [router]);
-
-  const handleNotePress = useCallback(
-    (id: string) => {
-      router.push({ pathname: "/journalEditor", params: { id } });
-    },
-    [router]
+  const handleNew = useCallback(() => router.push("/journalEditor"), [router]);
+  const handleOpen = useCallback(
+    (id: string) => router.push({ pathname: "/journalEditor", params: { id } }),
+    [router],
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: JournalEntry }) => (
-      <JournalNoteCard item={item} onPress={() => handleNotePress(item.id)} />
+    ({ item, index }: { item: JournalEntry; index: number }) => (
+      <JournalCard
+        item={item}
+        index={index}
+        onPress={() => handleOpen(item.id)}
+        colors={colors}
+      />
     ),
-    [handleNotePress]
+    [handleOpen, colors],
   );
 
   return (
-    <View className="flex-1 bg-primary pt-8 relative">
-      <NotificationTestSimple />
-      <BackgroundEventTest />
+    <View style={[s.screen, { backgroundColor: colors.background }]}>
+      {/* Header */}
+      <View style={s.header}>
+        <View>
+          <Text style={[s.title, { color: colors.textPrimary }]}>Journal</Text>
+          <Text style={[s.subtitle, { color: colors.textSecondary }]}>
+            {entries.length > 0
+              ? `${entries.length} reflection${entries.length === 1 ? "" : "s"}`
+              : "Your thoughts, captured"}
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={handleNew}
+          style={[s.newBtn, { backgroundColor: colors.accent }]}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="add" size={20} color="#fff" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Search — only when there are entries */}
+      {entries.length > 0 && (
+        <View
+          style={[
+            s.searchWrap,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+        >
+          <Ionicons
+            name="search-outline"
+            size={16}
+            color={colors.textSecondary}
+          />
+          <TextInput
+            style={[s.searchInput, { color: colors.textPrimary }]}
+            placeholder="Search entries..."
+            placeholderTextColor={colors.textSecondary}
+            value={search}
+            onChangeText={setSearch}
+            returnKeyType="search"
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
+          {!!search && (
+            <TouchableOpacity onPress={() => setSearch("")} hitSlop={8}>
+              <Ionicons
+                name="close-circle"
+                size={16}
+                color={colors.textSecondary}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {/* List / Empty */}
       {entries.length === 0 ? (
-        <View className="flex-1 items-center justify-center px-4">
-          {/* Placeholder for empty state illustration */}
-          <Text className="text-text-secondary text-center mb-6">
-            You haven&apos;t written anything yet. Use this space to reflect on
-            your day, sessions and track your progress.
+        <View style={s.empty}>
+          <View style={[s.emptyIcon, { backgroundColor: colors.surfaceMuted }]}>
+            <Ionicons
+              name="journal-outline"
+              size={32}
+              color={colors.textSecondary}
+            />
+          </View>
+          <Text style={[s.emptyTitle, { color: colors.textPrimary }]}>
+            Nothing here yet
+          </Text>
+          <Text style={[s.emptyBody, { color: colors.textSecondary }]}>
+            Use this space to reflect after sessions and track your growth over
+            time.
           </Text>
           <TouchableOpacity
-            className="bg-blue-600 rounded-lg px-8 py-3"
-            onPress={handleNewNote}
+            onPress={handleNew}
+            style={[s.emptyBtn, { backgroundColor: colors.accent }]}
+            activeOpacity={0.85}
           >
-            <Text className="text-white font-SoraSemiBold text-base">
-              + Start Writing
-            </Text>
+            <Text style={s.emptyBtnText}>Write first entry</Text>
           </TouchableOpacity>
         </View>
       ) : (
-        <>
-          {/* Search Bar */}
-          <View className="flex-row items-center bg-gray-50 dark:bg-gray-800 rounded-2xl px-4 py-3 mb-4 border border-gray-200 dark:border-gray-700 shadow-sm mx-4">
-            <TextInput
-              className="flex-1 text-base text-gray-800 dark:text-gray-200 font-SoraRegular"
-              placeholder="Revisit your words ..."
-              placeholderTextColor="#9CA3AF"
-              value={search}
-              onChangeText={setSearch}
-              returnKeyType="search"
-              autoCorrect={false}
-              autoCapitalize="none"
-            />
-            <Ionicons name="search" size={20} color="#9CA3AF" />
-          </View>
-          <FlatList
-            className="px-4"
-            data={filteredEntries}
-            contentContainerStyle={{ paddingBottom: 160 }}
-            keyExtractor={(item) => item.id}
-            ListEmptyComponent={
-              <Text className="text-center text-text-secondary mt-12">
-                No notes found.
-              </Text>
-            }
-            renderItem={renderItem}
-            initialNumToRender={10}
-            maxToRenderPerBatch={10}
-            windowSize={5}
-            removeClippedSubviews={true}
-          />
-          {/* Floating New Note Button */}
-          <View className="absolute bottom-28 left-1/2 -translate-x-1/2 z-50">
-            <TouchableOpacity
-              className="bg-blue-600 rounded-md px-24 py-4 shadow-lg flex-row items-center gap-2"
-              onPress={handleNewNote}
-              activeOpacity={0.85}
-            >
-              <Ring />
-              <Text className="font-SoraSemiBold text-white text-base">
-                New Note
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </>
+        <FlatList
+          data={filtered}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={s.list}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <Text style={[s.noResults, { color: colors.textSecondary }]}>
+              No entries match "{search}"
+            </Text>
+          }
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews
+        />
       )}
     </View>
   );
 }
+
+// ── Card sub-component ──────────────────────────────────────
+
+function JournalCard({
+  item,
+  index,
+  onPress,
+  colors,
+}: {
+  item: JournalEntry;
+  index: number;
+  onPress: () => void;
+  colors: ReturnType<typeof useTheme>["colors"];
+}) {
+  const textBlock = item.blocks?.find((b) => b.type === "text") as
+    | { type: "text"; content: string }
+    | undefined;
+  const preview = textBlock?.content?.trim().slice(0, 100) ?? "";
+  const dateStr = item.date ? format(parseISO(item.date), "MMM d, yyyy") : "";
+  const blockCount = item.blocks?.length ?? 0;
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      style={[
+        s.card,
+        { backgroundColor: colors.surface, borderColor: colors.border },
+      ]}
+      activeOpacity={0.75}
+    >
+      {/* Amber left accent bar */}
+      <View style={[s.cardAccent, { backgroundColor: colors.accent }]} />
+
+      <View style={s.cardBody}>
+        <Text
+          style={[s.cardTitle, { color: colors.textPrimary }]}
+          numberOfLines={1}
+        >
+          {item.title || "Untitled"}
+        </Text>
+        {!!preview && (
+          <Text
+            style={[s.cardPreview, { color: colors.textSecondary }]}
+            numberOfLines={2}
+          >
+            {preview}
+          </Text>
+        )}
+        <View style={s.cardMeta}>
+          <View style={s.metaChip}>
+            <Ionicons
+              name="calendar-outline"
+              size={11}
+              color={colors.textSecondary}
+            />
+            <Text style={[s.metaText, { color: colors.textSecondary }]}>
+              {dateStr}
+            </Text>
+          </View>
+          {!!item.time && (
+            <View style={s.metaChip}>
+              <Ionicons
+                name="time-outline"
+                size={11}
+                color={colors.textSecondary}
+              />
+              <Text style={[s.metaText, { color: colors.textSecondary }]}>
+                {item.time}
+              </Text>
+            </View>
+          )}
+          {blockCount > 1 && (
+            <View style={s.metaChip}>
+              <Ionicons
+                name="layers-outline"
+                size={11}
+                color={colors.textSecondary}
+              />
+              <Text style={[s.metaText, { color: colors.textSecondary }]}>
+                {blockCount} blocks
+              </Text>
+            </View>
+          )}
+        </View>
+      </View>
+
+      <Ionicons name="chevron-forward" size={15} color={colors.border} />
+    </TouchableOpacity>
+  );
+}
+
+// ── Styles ──────────────────────────────────────────────────
+
+const s = StyleSheet.create({
+  screen: { flex: 1 },
+
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingTop: 56,
+    paddingBottom: 12,
+  },
+  title: { fontSize: 24, fontFamily: "SoraBold", letterSpacing: -0.3 },
+  subtitle: { fontSize: 13, fontFamily: "Sora", marginTop: 3 },
+  newBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  searchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: 20,
+    marginBottom: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 10,
+  },
+  searchInput: { flex: 1, fontSize: 14, fontFamily: "Sora", padding: 0 },
+
+  list: { paddingHorizontal: 20, paddingBottom: 180 },
+
+  // Entry card
+  card: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 10,
+    overflow: "hidden",
+  },
+  cardAccent: { width: 3, alignSelf: "stretch" },
+  cardBody: { flex: 1, paddingVertical: 14, paddingLeft: 14, paddingRight: 10 },
+  cardTitle: { fontSize: 15, fontFamily: "SoraSemiBold", marginBottom: 4 },
+  cardPreview: {
+    fontSize: 13,
+    fontFamily: "Sora",
+    lineHeight: 19,
+    marginBottom: 8,
+  },
+  cardMeta: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  metaChip: { flexDirection: "row", alignItems: "center", gap: 4 },
+  metaText: { fontSize: 11, fontFamily: "Sora" },
+
+  // Empty
+  empty: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 40,
+    gap: 12,
+  },
+  emptyIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 4,
+  },
+  emptyTitle: { fontSize: 18, fontFamily: "SoraBold" },
+  emptyBody: {
+    fontSize: 14,
+    fontFamily: "Sora",
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  emptyBtn: {
+    marginTop: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 13,
+    borderRadius: 14,
+  },
+  emptyBtnText: { fontSize: 14, fontFamily: "SoraSemiBold", color: "#fff" },
+  noResults: {
+    textAlign: "center",
+    fontSize: 14,
+    fontFamily: "Sora",
+    marginTop: 40,
+  },
+});

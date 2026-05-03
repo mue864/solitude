@@ -53,7 +53,6 @@ export default function WorkType() {
         <Button
           buttonText={Strings.onboardingPage2Button}
           nextPage={() => router.push("/(onboarding)/notifications")}
-          positioning={!selectedType ? "opacity-70" : ""}
           disabled={!selectedType}
         />
       </View>

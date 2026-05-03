@@ -1,7 +1,8 @@
+import { useTheme } from "@/context/ThemeContext";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import React, { useState } from "react";
-import { Text, TouchableOpacity, View } from "react-native";
+import { TouchableOpacity, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   Extrapolate,
@@ -35,6 +36,7 @@ export default function DraggableBlock({
   onDelete,
   canDelete = false,
 }: DraggableBlockProps) {
+  const { colors } = useTheme();
   const [dragActive, setDragActive] = useState(false);
   const translateY = useSharedValue(0);
   const scale = useSharedValue(1);
@@ -63,7 +65,7 @@ export default function DraggableBlock({
         runOnJS(setDragActive)(true);
         runOnJS(onDragStart)(index);
         runOnJS(Haptics.notificationAsync)(
-          Haptics.NotificationFeedbackType.Success
+          Haptics.NotificationFeedbackType.Success,
         );
 
         zIndex.value = 1000;
@@ -85,7 +87,7 @@ export default function DraggableBlock({
         if (clampedIndex !== index) {
           runOnJS(onReorder)(index, clampedIndex);
           runOnJS(Haptics.notificationAsync)(
-            Haptics.NotificationFeedbackType.Success
+            Haptics.NotificationFeedbackType.Success,
           );
         } else {
           runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Light);
@@ -130,7 +132,7 @@ export default function DraggableBlock({
       scale.value,
       [1, 1.04],
       [0.1, 0.25],
-      Extrapolate.CLAMP
+      Extrapolate.CLAMP,
     );
     return {
       shadowOpacity,
@@ -138,7 +140,7 @@ export default function DraggableBlock({
         scale.value,
         [1, 1.04],
         [2, 8],
-        Extrapolate.CLAMP
+        Extrapolate.CLAMP,
       ),
       shadowOffset: {
         width: 0,
@@ -152,31 +154,31 @@ export default function DraggableBlock({
     <Animated.View
       style={[
         {
-          marginBottom: 12,
-          backgroundColor: "#ffffff",
+          marginBottom: 10,
+          backgroundColor: colors.surface,
           borderRadius: 16,
           borderWidth: 1,
-          borderColor: "#e5e7eb",
+          borderColor: dragActive ? colors.accent : colors.border,
           overflow: "hidden",
         },
         animatedStyle,
         shadowStyle,
       ]}
     >
-      {/* Header with drag handle and delete button */}
+      {/* Drag handle + delete row */}
       <View
         style={{
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
-          paddingHorizontal: 16,
-          paddingVertical: 12,
-          backgroundColor: "#f9fafb",
+          paddingHorizontal: 14,
+          paddingVertical: 8,
+          backgroundColor: colors.surfaceMuted,
           borderBottomWidth: 1,
-          borderBottomColor: "#e5e7eb",
+          borderBottomColor: colors.border,
         }}
       >
-        {/* Drag Handle (hold then drag) */}
+        {/* Drag Handle */}
         <GestureDetector gesture={panGesture}>
           <View
             style={{
@@ -184,32 +186,16 @@ export default function DraggableBlock({
               alignItems: "center",
               paddingVertical: 4,
               paddingHorizontal: 8,
-              backgroundColor: dragActive ? "#e0e7ff" : "#f3f4f6",
+              backgroundColor: dragActive ? colors.accentMuted : "transparent",
               borderRadius: 8,
-              borderWidth: 1,
-              borderColor: dragActive ? "#6366f1" : "#d1d5db",
-              transform: [{ scale: dragActive ? 1.08 : 1 }],
-              shadowColor: dragActive ? "#6366f1" : undefined,
-              shadowOpacity: dragActive ? 0.15 : 0,
-              shadowRadius: dragActive ? 6 : 0,
-              shadowOffset: { width: 0, height: dragActive ? 2 : 0 },
+              gap: 6,
             }}
           >
             <Ionicons
               name="reorder-three"
               size={16}
-              color={dragActive ? "#6366f1" : "#6b7280"}
-              style={{ marginRight: 6 }}
+              color={dragActive ? colors.accent : colors.textSecondary}
             />
-            <Text
-              style={{
-                fontSize: 12,
-                color: dragActive ? "#6366f1" : "#6b7280",
-                fontWeight: "500",
-              }}
-            >
-              Hold to reorder
-            </Text>
           </View>
         </GestureDetector>
 
@@ -217,25 +203,27 @@ export default function DraggableBlock({
         {canDelete && (
           <TouchableOpacity
             style={{
-              width: 32,
-              height: 32,
-              backgroundColor: "#fee2e2",
+              width: 28,
+              height: 28,
+              backgroundColor: "rgba(224,90,90,0.10)",
               borderRadius: 8,
               alignItems: "center",
               justifyContent: "center",
-              borderWidth: 1,
-              borderColor: "#fecaca",
             }}
             onPress={onDelete}
             activeOpacity={0.7}
           >
-            <Ionicons name="trash-outline" size={16} color="#dc2626" />
+            <Ionicons
+              name="trash-outline"
+              size={14}
+              color={colors.destructive}
+            />
           </TouchableOpacity>
         )}
       </View>
 
       {/* Block Content */}
-      <View style={{ padding: 16 }}>{children}</View>
+      <View>{children}</View>
     </Animated.View>
   );
 }

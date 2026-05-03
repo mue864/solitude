@@ -1,8 +1,15 @@
+import BottomSheet from "@/components/BottomSheet";
+import { useTheme } from "@/context/ThemeContext";
 import { useSessionIntelligence } from "@/store/sessionIntelligence";
 import { Audio } from "expo-av";
-import { BlurView } from "expo-blur";
 import React, { useEffect, useState } from "react";
-import { Modal, Text, TouchableOpacity, Vibration, View } from "react-native";
+import {
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  Vibration,
+  View,
+} from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -36,9 +43,8 @@ export default function SessionCompletionModal({
   onReflect,
   onViewInsights,
 }: SessionCompletionModalProps) {
+  const { colors } = useTheme();
   const [sound, setSound] = useState<Audio.Sound | null>(null);
-  const scale = useSharedValue(0);
-  const opacity = useSharedValue(0);
   const checkmarkScale = useSharedValue(0);
   const { getProductivityInsights } = useSessionIntelligence();
   const insights = getProductivityInsights();
@@ -46,7 +52,7 @@ export default function SessionCompletionModal({
   useEffect(() => {
     const loadSound = async () => {
       const { sound } = await Audio.Sound.createAsync(
-        require("@/assets/sounds/chime.mp3")
+        require("@/assets/sounds/chime.mp3"),
       );
       setSound(sound);
     };
@@ -60,125 +66,162 @@ export default function SessionCompletionModal({
     if (isVisible) {
       if (sound) sound.replayAsync();
       Vibration.vibrate(100);
-      scale.value = withSpring(1, { damping: 15, stiffness: 150 });
-      opacity.value = withTiming(1, { duration: 300 });
       checkmarkScale.value = withSequence(
         withSpring(1.2, { damping: 10 }),
-        withSpring(1, { damping: 15 })
+        withSpring(1, { damping: 15 }),
       );
     } else {
-      scale.value = withTiming(0, { duration: 200 });
-      opacity.value = withTiming(0, { duration: 200 });
-      checkmarkScale.value = 0;
+      checkmarkScale.value = withTiming(0, { duration: 150 });
     }
   }, [isVisible, sound]);
 
-  const modalStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-    opacity: opacity.value,
-  }));
   const checkmarkStyle = useAnimatedStyle(() => ({
     transform: [{ scale: checkmarkScale.value }],
   }));
 
+  const insight =
+    insights.length > 0 ? insights[0] : "Great job! Keep up the focus.";
+
   return (
-    <Modal
-      visible={isVisible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <View className="flex-1 justify-center items-center bg-black/50">
-        <BlurView
-          intensity={20}
-          className="w-full h-full justify-center items-center"
+    <BottomSheet isVisible={isVisible} onClose={onClose}>
+      {/* Checkmark + title */}
+      <View style={s.hero}>
+        <Animated.View
+          style={[s.check, { backgroundColor: "#4CAF7D" }, checkmarkStyle]}
         >
-          <Animated.View
-            className="w-[90%] max-w-md bg-white dark:bg-gray-900 rounded-2xl shadow-xl overflow-hidden"
-            style={modalStyle}
+          <Text style={s.checkMark}>✓</Text>
+        </Animated.View>
+        <Text style={[s.title, { color: colors.textPrimary }]}>
+          Session Complete
+        </Text>
+        {session.taskName ? (
+          <Text
+            style={[s.taskName, { color: colors.textSecondary }]}
+            numberOfLines={1}
           >
-            <View className="p-6">
-              {/* Header with checkmark */}
-              <View className="items-center mb-6">
-                <Animated.View
-                  className="w-16 h-16 bg-green-500 rounded-full items-center justify-center mb-4"
-                  style={checkmarkStyle}
-                >
-                  <Text className="text-white text-2xl font-SoraBold">✓</Text>
-                </Animated.View>
-                <Text className="text-text-primary text-xl font-SoraBold text-center">
-                  Session Complete!
-                </Text>
-              </View>
-              {/* Session summary */}
-              <View className="mb-4">
-                <View className="flex-row justify-between mb-2">
-                  <Text className="text-text-secondary text-base font-SoraSemiBold">
-                    Task
-                  </Text>
-                  <Text className="text-text-primary text-base font-SoraSemiBold">
-                    {session.taskName}
-                  </Text>
-                </View>
-                <View className="flex-row justify-between mb-2">
-                  <Text className="text-text-secondary text-base font-SoraSemiBold">
-                    Duration
-                  </Text>
-                  <Text className="text-text-primary text-base font-SoraSemiBold">
-                    {formatDuration(session.duration)}
-                  </Text>
-                </View>
-                <View className="flex-row justify-between">
-                  <Text className="text-text-secondary text-base font-SoraSemiBold">
-                    Streak
-                  </Text>
-                  <Text className="text-text-primary text-base font-SoraSemiBold">
-                    {session.streak} days
-                  </Text>
-                </View>
-              </View>
-              {/* Insights */}
-              <View className="mb-6">
-                <Text className="text-text-secondary text-sm font-SoraSemiBold mb-1">
-                  Insights
-                </Text>
-                <Text className="text-text-primary text-base font-SoraSemiBold">
-                  {insights.length > 0
-                    ? insights[0]
-                    : "Great job! Keep up the focus."}
-                </Text>
-              </View>
-              {/* Actions */}
-              <View className="flex-row justify-end gap-3 mt-2">
-                <TouchableOpacity
-                  className="px-4 py-2 rounded-xl bg-gray-100 dark:bg-gray-800"
-                  onPress={onReflect}
-                >
-                  <Text className="text-text-secondary font-SoraSemiBold">
-                    Reflect
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  className="px-4 py-2 rounded-xl bg-blue-600"
-                  onPress={onViewInsights}
-                >
-                  <Text className="text-white font-SoraSemiBold">
-                    View Insights
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  className="px-4 py-2 rounded-xl bg-gray-100 dark:bg-gray-800"
-                  onPress={onClose}
-                >
-                  <Text className="text-text-secondary font-SoraSemiBold">
-                    Close
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Animated.View>
-        </BlurView>
+            {session.taskName}
+          </Text>
+        ) : null}
       </View>
-    </Modal>
+
+      {/* Stats row */}
+      <View
+        style={[
+          s.statsRow,
+          { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+        ]}
+      >
+        <View style={s.stat}>
+          <Text style={[s.statValue, { color: colors.textPrimary }]}>
+            {formatDuration(session.duration)}
+          </Text>
+          <Text style={[s.statLabel, { color: colors.textSecondary }]}>
+            Duration
+          </Text>
+        </View>
+        <View style={[s.statDivider, { backgroundColor: colors.border }]} />
+        <View style={s.stat}>
+          <Text style={[s.statValue, { color: colors.accent }]}>
+            {session.streak}
+          </Text>
+          <Text style={[s.statLabel, { color: colors.textSecondary }]}>
+            Day streak
+          </Text>
+        </View>
+      </View>
+
+      {/* Insight */}
+      <View
+        style={[
+          s.insightCard,
+          { backgroundColor: colors.accentMuted, borderColor: colors.accent },
+        ]}
+      >
+        <Text style={[s.insightText, { color: colors.textPrimary }]}>
+          {insight}
+        </Text>
+      </View>
+
+      {/* Actions */}
+      <View style={s.actions}>
+        <TouchableOpacity
+          onPress={onReflect}
+          style={[
+            s.btn,
+            {
+              backgroundColor: colors.surfaceMuted,
+              borderColor: colors.border,
+            },
+          ]}
+          activeOpacity={0.75}
+        >
+          <Text style={[s.btnText, { color: colors.textSecondary }]}>
+            Reflect
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={onViewInsights}
+          style={[s.btn, { backgroundColor: colors.accent }]}
+          activeOpacity={0.8}
+        >
+          <Text style={[s.btnText, { color: "#fff" }]}>Insights</Text>
+        </TouchableOpacity>
+      </View>
+
+      <TouchableOpacity onPress={onClose} style={s.skipBtn} activeOpacity={0.6}>
+        <Text style={[s.skipText, { color: colors.textSecondary }]}>
+          Continue
+        </Text>
+      </TouchableOpacity>
+    </BottomSheet>
   );
 }
+
+const s = StyleSheet.create({
+  hero: { alignItems: "center", marginBottom: 20 },
+  check: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  checkMark: { fontSize: 24, color: "#fff", fontFamily: "SoraBold" },
+  title: { fontSize: 20, fontFamily: "SoraBold", letterSpacing: -0.3 },
+  taskName: { fontSize: 13, fontFamily: "Sora", marginTop: 4 },
+
+  statsRow: {
+    flexDirection: "row",
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 14,
+    overflow: "hidden",
+  },
+  stat: { flex: 1, alignItems: "center", paddingVertical: 14 },
+  statValue: { fontSize: 22, fontFamily: "SoraBold" },
+  statLabel: { fontSize: 12, fontFamily: "Sora", marginTop: 2 },
+  statDivider: { width: 1 },
+
+  insightCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 20,
+  },
+  insightText: { fontSize: 13, fontFamily: "Sora", lineHeight: 20 },
+
+  actions: { flexDirection: "row", gap: 10, marginBottom: 12 },
+  btn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  btnText: { fontSize: 14, fontFamily: "SoraSemiBold" },
+
+  skipBtn: { alignItems: "center", paddingVertical: 6 },
+  skipText: { fontSize: 13, fontFamily: "Sora" },
+});
