@@ -1,0 +1,27 @@
+diff --git a/node_modules/expo-av/android/src/main/java/expo/modules/av/player/SimpleExoPlayerData.java b/node_modules/expo-av/android/src/main/java/expo/modules/av/player/SimpleExoPlayerData.java
+index 8835a39..0a6d3c9 100644
+--- a/node_modules/expo-av/android/src/main/java/expo/modules/av/player/SimpleExoPlayerData.java
++++ b/node_modules/expo-av/android/src/main/java/expo/modules/av/player/SimpleExoPlayerData.java
+@@ -3,6 +3,7 @@ package expo.modules.av.player;
+ import android.content.Context;
+ import android.net.Uri;
+ import android.os.Bundle;
++import android.os.Handler;
+ import android.os.Looper;
+ 
+ import android.text.TextUtils;
+@@ -121,8 +122,13 @@ class SimpleExoPlayerData extends PlayerData
+     super.release();
+     stopUpdatingProgressIfNecessary();
+     if (mSimpleExoPlayer != null) {
+-      mSimpleExoPlayer.release();
++      final com.google.android.exoplayer2.SimpleExoPlayer playerToRelease = mSimpleExoPlayer;
+       mSimpleExoPlayer = null;
++      if (Looper.myLooper() == Looper.getMainLooper()) {
++        playerToRelease.release();
++      } else {
++        new Handler(Looper.getMainLooper()).post(playerToRelease::release);
++      }
+     }
+   }
+ 
