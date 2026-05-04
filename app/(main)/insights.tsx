@@ -32,7 +32,6 @@ export default function Insights() {
     userStats,
     getProductivityInsights,
     getRecommendations,
-    cleanupSessionData,
     sessionRecords,
   } = useSessionIntelligence();
 
@@ -46,13 +45,7 @@ export default function Insights() {
   );
   const score = Math.min(productivity.productivityScore, 100);
 
-  // Cleanup bad data once on mount
-  useEffect(() => {
-    const hasBadData = sessionRecords.some(
-      (r) => (r.completed && r.duration <= 0) || r.timestamp > Date.now(),
-    );
-    if (hasBadData) cleanupSessionData();
-  }, []);
+  // insights.tsx no longer needs cleanup — durations are recorded correctly now
 
   // Animate score ring dashoffset
   const dashOffset = useRef(new Animated.Value(CIRCUMFERENCE)).current;

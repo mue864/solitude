@@ -96,19 +96,6 @@ export const BUILTIN_FLOWS: CustomFlow[] = [
     readonly: true,
   },
   {
-    id: "builtin-debug-flow",
-    name: "Debug Flow",
-    category: "specialized",
-    steps: [
-      { id: "1", type: "Session 1", duration: 60 },
-      { id: "2", type: "Session 2", duration: 60 },
-      { id: "3", type: "Session 3", duration: 60 },
-    ],
-    createdAt: 0,
-    updatedAt: 0,
-    readonly: true,
-  },
-  {
     id: "builtin-morning-routine",
     name: "Morning Routine",
     category: "wellness",

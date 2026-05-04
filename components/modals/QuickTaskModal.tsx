@@ -1,25 +1,46 @@
+import { useTheme } from "@/context/ThemeContext";
 import { useSessionStore } from "@/store/sessionState";
 import { useTaskStore } from "@/store/taskStore";
 import { Ionicons } from "@expo/vector-icons";
-import { BlurView } from "expo-blur";
 import React, { useEffect, useState } from "react";
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  TouchableWithoutFeedback,
   View,
 } from "react-native";
 
-const TAGS = [
-  { key: "urgent", color: "bg-red-500", label: "urgent" },
-  { key: "important", color: "bg-amber-500", label: "important" },
-  { key: "quickwin", color: "bg-green-500", label: "quickwin" },
-  { key: "deepwork", color: "bg-blue-500", label: "deepwork" },
+const TAGS: {
+  key: "urgent" | "important" | "quickwin" | "deepwork";
+  color: string;
+  label: string;
+}[] = [
+  { key: "urgent", color: "#E05A5A", label: "Urgent" },
+  { key: "important", color: "#E8A43A", label: "Important" },
+  { key: "quickwin", color: "#4CAF7D", label: "Quick win" },
+  { key: "deepwork", color: "#5B8DEF", label: "Deep work" },
 ];
+
+function tagColor(key: string | null | undefined): string {
+  switch (key) {
+    case "urgent":
+      return "#E05A5A";
+    case "important":
+      return "#E8A43A";
+    case "quickwin":
+      return "#4CAF7D";
+    case "deepwork":
+      return "#5B8DEF";
+    default:
+      return "#8A8A96";
+  }
+}
 
 const QuickTaskModal = ({
   isVisible,
@@ -28,10 +49,12 @@ const QuickTaskModal = ({
   isVisible: boolean;
   onClose: () => void;
 }) => {
+  const { colors } = useTheme();
   const tasks = useTaskStore((s) => s.tasks);
   const setCurrentTask = useTaskStore((s) => s.setCurrentTask);
   const addTask = useTaskStore((s) => s.addTask);
-  const currentFlow = useSessionStore((s) => s.currentFlow);
+  const currentFlow = useSessionStore((s) => s.currentFlowId);
+
   const [showInput, setShowInput] = useState(false);
   const [taskName, setTaskName] = useState("");
   const [selectedTag, setSelectedTag] = useState<
@@ -106,288 +129,273 @@ const QuickTaskModal = ({
   };
 
   const handleCancel = () => {
-    // Reset form
     setTaskName("");
     setSelectedTag(null);
-
-    // If no tasks exist, close the modal entirely
-    // If tasks exist, return to task list
-    if (tasks.length === 0) {
-      onClose();
-    } else {
-      setShowInput(false);
-    }
+    setShowInput(false);
+    onClose();
   };
 
-  const handleAddNewTask = () => {
-    setShowInput(true);
-  };
+  const s = makeStyles(colors);
 
   return (
     <>
+      {/* ── Main modal ─────────────────────────────────────────── */}
       <Modal
         visible={isVisible}
         transparent
         animationType="fade"
         onRequestClose={onClose}
       >
-        <View className="flex-1 justify-center items-center bg-black/50">
-          {/* Remove the TouchableWithoutFeedback overlay that was interfering */}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1 }}
+        >
+          <Pressable
+            style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)" }}
+            onPress={onClose}
+          />
+          <View style={s.sheet}>
+            <Text style={s.title}>
+              {showInput ? "New task" : "Pick a task"}
+            </Text>
 
-          {/* Modal content with BlurView as background only */}
-          <View className="w-[90%] max-w-md">
-            <BlurView intensity={20} className="rounded-2xl overflow-hidden">
-              <View className="bg-white dark:bg-gray-800/90 border border-gray-100 dark:border-gray-700">
-                <View className="p-6">
-                  <View className="flex-row items-center mb-2">
-                    <Text className="text-text-primary text-lg font-SoraBold flex-1 text-center">
-                      {showInput
-                        ? "New Task"
-                        : "Pick from your plan or add something new"}
+            {showInput ? (
+              <>
+                <Text style={s.subtitle}>What do you want to focus on?</Text>
+                <TextInput
+                  style={s.input}
+                  placeholder="Task name…"
+                  placeholderTextColor={colors.textSecondary}
+                  value={taskName}
+                  onChangeText={setTaskName}
+                  autoFocus
+                  returnKeyType="done"
+                  onSubmitEditing={handleAddTask}
+                />
+                <Text style={s.sectionLabel}>Tag</Text>
+                <View style={s.tagRow}>
+                  {TAGS.map((tag) => {
+                    const sel = selectedTag === tag.key;
+                    return (
+                      <TouchableOpacity
+                        key={tag.key}
+                        style={[
+                          s.tagChip,
+                          {
+                            backgroundColor: sel
+                              ? tag.color + "22"
+                              : colors.surfaceMuted,
+                            borderColor: sel ? tag.color : colors.border,
+                          },
+                        ]}
+                        onPress={() => setSelectedTag(sel ? null : tag.key)}
+                        activeOpacity={0.75}
+                      >
+                        <View
+                          style={[s.tagDot, { backgroundColor: tag.color }]}
+                        />
+                        <Text
+                          style={[
+                            s.tagLabel,
+                            { color: sel ? tag.color : colors.textSecondary },
+                          ]}
+                        >
+                          {tag.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                <TouchableOpacity
+                  style={[s.primaryBtn, !taskName.trim() && { opacity: 0.45 }]}
+                  onPress={handleAddTask}
+                  activeOpacity={0.8}
+                  disabled={!taskName.trim()}
+                >
+                  <Text style={s.primaryBtnText}>Start with task</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={s.ghostBtn}
+                  onPress={handleCancel}
+                  activeOpacity={0.75}
+                >
+                  <Text
+                    style={[s.ghostBtnText, { color: colors.textSecondary }]}
+                  >
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                {tasks.length === 0 ? (
+                  <View style={s.emptyState}>
+                    <Ionicons
+                      name="checkmark-circle-outline"
+                      size={36}
+                      color={colors.textSecondary}
+                      style={{ marginBottom: 10, opacity: 0.5 }}
+                    />
+                    <Text
+                      style={[s.emptyText, { color: colors.textSecondary }]}
+                    >
+                      No tasks yet. Add one below.
                     </Text>
                   </View>
-
-                  {showInput ? (
-                    <>
-                      <Text className="text-text-secondary text-sm font-SoraSemiBold text-center mb-5">
-                        Keep it fresh!
-                      </Text>
-                      <Text className="text-text-primary font-Sora text-sm mb-2">
-                        What do you want to focus on?
-                      </Text>
-                      <TextInput
-                        className="w-full border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-3 mb-4 text-base text-text-primary bg-gray-50 dark:bg-gray-700"
-                        placeholder="Enter task..."
-                        value={taskName}
-                        onChangeText={setTaskName}
-                        autoFocus
-                      />
-                      <Text className="text-text-secondary text-sm mb-2 font-SoraSemiBold">
-                        Tags
-                      </Text>
-                      <View className="flex-row flex-wrap gap-2 mb-6">
-                        {TAGS.map((tag) => (
-                          <TouchableOpacity
-                            key={tag.key}
-                            onPress={() =>
-                              setSelectedTag(
-                                tag.key as
-                                  | "urgent"
-                                  | "important"
-                                  | "quickwin"
-                                  | "deepwork"
-                              )
-                            }
-                            className={`flex-row items-center px-3 py-1 rounded-full border ${selectedTag === tag.key ? "border-2 border-black dark:border-white" : "border-transparent"}`}
-                            style={{
-                              backgroundColor:
-                                selectedTag === tag.key
-                                  ? tag.key === "urgent"
-                                    ? "#EF4444"
-                                    : tag.key === "important"
-                                      ? "#F59E0B"
-                                      : tag.key === "quickwin"
-                                        ? "#10B981"
-                                        : tag.key === "deepwork"
-                                          ? "#3B82F6"
-                                          : "#F3F4F6"
-                                  : "#F3F4F6",
-                            }}
-                          >
-                            <View
-                              className={`w-2 h-2 rounded-full mr-2 ${tag.color}`}
-                            />
-                            <Text
-                              className="text-xs font-SoraSemiBold capitalize"
-                              style={{
-                                color:
-                                  selectedTag === tag.key ? "#fff" : "#222",
-                              }}
-                            >
-                              {tag.label}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                      <TouchableOpacity
-                        className="bg-blue-600 rounded-xl py-3 items-center mb-2"
-                        onPress={handleAddTask}
-                        activeOpacity={0.85}
-                      >
-                        <Text className="text-white text-base font-SoraSemiBold">
-                          Start with Task
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        className="bg-gray-100 dark:bg-gray-700 rounded-xl py-3 items-center"
-                        onPress={handleCancel}
-                      >
-                        <Text className="text-text-secondary text-base font-SoraSemiBold">
-                          Cancel
-                        </Text>
-                      </TouchableOpacity>
-                    </>
-                  ) : (
-                    <>
-                      {tasks.length === 0 ? (
-                        <View className="items-center my-8">
-                          <Text className="text-text-secondary text-center mb-2">
-                            Looks like your list is empty.
-                          </Text>
-                          <Text className="text-text-primary text-center">
-                            What's on your mind?
-                          </Text>
-                        </View>
-                      ) : (
-                        <ScrollView
-                          className="max-h-64 mb-4"
-                          showsVerticalScrollIndicator={true}
-                          nestedScrollEnabled={true}
+                ) : (
+                  <ScrollView
+                    style={{ maxHeight: 260, marginBottom: 12 }}
+                    showsVerticalScrollIndicator={false}
+                  >
+                    <View style={{ gap: 8 }}>
+                      {tasks.map((task) => (
+                        <View
+                          key={task.id}
+                          style={[s.taskRow, { borderColor: colors.border }]}
                         >
-                          <View className="gap-3">
-                            {tasks.map((task) => (
-                              <View
-                                key={task.id}
-                                className="flex-row items-center justify-between bg-tab-bg dark:bg-gray-800 rounded-xl px-4 py-3 border border-gray-100 dark:border-gray-700 shadow-sm"
-                                style={{
-                                  shadowColor: "#000",
-                                  shadowOffset: { width: 0, height: 2 },
-                                  shadowOpacity: 0.08,
-                                  shadowRadius: 8,
-                                }}
-                              >
-                                <View className="flex-row items-center gap-2 flex-1">
-                                  <View
-                                    className={`w-2.5 h-2.5 rounded-full ${
-                                      task.tag === "urgent"
-                                        ? "bg-red-500"
-                                        : task.tag === "important"
-                                          ? "bg-amber-500"
-                                          : task.tag === "quickwin"
-                                            ? "bg-green-500"
-                                            : task.tag === "deepwork"
-                                              ? "bg-blue-500"
-                                              : "bg-gray-300"
-                                    }`}
-                                  />
-                                  <Text
-                                    className={`text-text-primary text-base font-SoraSemiBold ${task.completed ? "line-through text-gray-400" : ""}`}
-                                  >
-                                    {task.name}
-                                  </Text>
-                                </View>
-                                <TouchableOpacity
-                                  onPress={() => handleAssignTask(task.id)}
-                                  className="bg-blue-600 rounded-full p-2 ml-2"
-                                  accessibilityLabel="Assign task"
-                                >
-                                  <Ionicons
-                                    name="play"
-                                    size={18}
-                                    color="#fff"
-                                  />
-                                </TouchableOpacity>
-                              </View>
-                            ))}
-                          </View>
-                        </ScrollView>
-                      )}
-                      <TouchableOpacity
-                        className="bg-blue-600 rounded-xl py-3 items-center flex-row justify-center gap-2 mb-2"
-                        onPress={handleAddNewTask}
-                        activeOpacity={0.85}
-                      >
-                        <Ionicons name="add" size={20} color="#fff" />
-                        <Text className="text-white text-base font-SoraSemiBold">
-                          Add New Task
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        className="bg-gray-100 dark:bg-gray-700 rounded-xl py-3 items-center"
-                        onPress={onClose}
-                        activeOpacity={0.85}
-                      >
-                        <Text className="text-text-secondary text-base font-SoraSemiBold">
-                          Cancel
-                        </Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                </View>
-              </View>
-            </BlurView>
+                          <View
+                            style={[
+                              s.taskDot,
+                              { backgroundColor: tagColor(task.tag) },
+                            ]}
+                          />
+                          <Text
+                            style={[
+                              s.taskName,
+                              { color: colors.textPrimary },
+                              task.completed && s.taskNameDone,
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {task.name}
+                          </Text>
+                          <TouchableOpacity
+                            style={[
+                              s.assignBtn,
+                              { backgroundColor: colors.accentMuted },
+                            ]}
+                            onPress={() => handleAssignTask(task.id)}
+                            activeOpacity={0.8}
+                          >
+                            <Ionicons
+                              name="play"
+                              size={14}
+                              color={colors.accent}
+                            />
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </View>
+                  </ScrollView>
+                )}
+                <TouchableOpacity
+                  style={s.primaryBtn}
+                  onPress={() => setShowInput(true)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="add" size={18} color={colors.background} />
+                  <Text style={s.primaryBtnText}>Add new task</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={s.ghostBtn}
+                  onPress={onClose}
+                  activeOpacity={0.75}
+                >
+                  <Text
+                    style={[s.ghostBtnText, { color: colors.textSecondary }]}
+                  >
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
-
-          {/* Overlay for closing modal - positioned behind the modal content */}
-          <TouchableWithoutFeedback onPress={onClose}>
-            <View className="absolute inset-0 -z-10" />
-          </TouchableWithoutFeedback>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
-      {/* Task Switch Confirmation Modal */}
+      {/* ── Flow switch confirmation ────────────────────────────── */}
       <Modal
         visible={showConfirmation}
         transparent
         animationType="fade"
         onRequestClose={handleCancelTaskSwitch}
       >
-        <View className="flex-1 justify-center items-center bg-black/50">
-          <View className="w-[90%] max-w-sm">
-            <BlurView intensity={20} className="rounded-2xl overflow-hidden">
-              <View className="bg-white/90 dark:bg-gray-800/90 border border-gray-100 dark:border-gray-700">
-                <View className="p-6">
-                  <View className="items-center mb-4">
-                    <View className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-full items-center justify-center mb-3">
-                      <Ionicons
-                        name="swap-horizontal"
-                        size={24}
-                        color="#3B82F6"
-                      />
-                    </View>
-                    <Text className="text-text-primary text-lg font-SoraBold text-center mb-2">
-                      Switch Focus?
-                    </Text>
-                    <Text className="text-text-secondary text-sm text-center">
-                      You&apos;re currently in a Flow. Switching tasks will
-                      change your focus but keep the Flow active.
-                    </Text>
-                  </View>
-
-                  {pendingTaskId && (
-                    <View className="bg-gray-50 dark:bg-gray-700 rounded-xl p-4 mb-4">
-                      <Text className="text-text-secondary text-sm mb-1">
-                        New focus:
-                      </Text>
-                      <Text className="text-text-primary font-SoraSemiBold">
-                        {tasks.find((t) => t.id === pendingTaskId)?.name}
-                      </Text>
-                    </View>
-                  )}
-
-                  <View className="flex-row gap-3">
-                    <TouchableOpacity
-                      className="flex-1 bg-gray-100 dark:bg-gray-700 rounded-xl py-3 items-center"
-                      onPress={handleCancelTaskSwitch}
-                      activeOpacity={0.85}
-                    >
-                      <Text className="text-text-secondary text-base font-SoraSemiBold">
-                        Keep Current
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      className="flex-1 bg-blue-600 rounded-xl py-3 items-center"
-                      onPress={handleConfirmTaskSwitch}
-                      activeOpacity={0.85}
-                    >
-                      <Text className="text-white text-base font-SoraSemiBold">
-                        Switch Focus
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.6)",
+            justifyContent: "flex-end",
+          }}
+        >
+          <View style={s.confirmSheet}>
+            <View
+              style={[s.confirmIcon, { backgroundColor: colors.accentMuted }]}
+            >
+              <Ionicons
+                name="swap-horizontal-outline"
+                size={24}
+                color={colors.accent}
+              />
+            </View>
+            <Text style={[s.confirmTitle, { color: colors.textPrimary }]}>
+              Switch task?
+            </Text>
+            <Text style={[s.confirmBody, { color: colors.textSecondary }]}>
+              You&apos;re in a Flow. Switching task will change your focus but
+              keep the Flow active.
+            </Text>
+            {pendingTaskId && (
+              <View
+                style={[
+                  s.confirmCard,
+                  {
+                    backgroundColor: colors.surfaceMuted,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[s.confirmCardLabel, { color: colors.textSecondary }]}
+                >
+                  New focus
+                </Text>
+                <Text
+                  style={[s.confirmCardValue, { color: colors.textPrimary }]}
+                >
+                  {tasks.find((t) => t.id === pendingTaskId)?.name}
+                </Text>
               </View>
-            </BlurView>
+            )}
+            <View style={s.confirmBtnRow}>
+              <TouchableOpacity
+                style={[
+                  s.confirmSecondary,
+                  { backgroundColor: colors.surfaceMuted },
+                ]}
+                onPress={handleCancelTaskSwitch}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    s.confirmSecondaryText,
+                    { color: colors.textSecondary },
+                  ]}
+                >
+                  Keep current
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.confirmPrimary, { backgroundColor: colors.accent }]}
+                onPress={handleConfirmTaskSwitch}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[s.confirmPrimaryText, { color: colors.background }]}
+                >
+                  Switch
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -396,3 +404,165 @@ const QuickTaskModal = ({
 };
 
 export default QuickTaskModal;
+
+// ---------------------------------------------------------------------------
+// Styles factory
+// ---------------------------------------------------------------------------
+function makeStyles(colors: ReturnType<typeof useTheme>["colors"]) {
+  return StyleSheet.create({
+    sheet: {
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      paddingHorizontal: 24,
+      paddingTop: 20,
+      paddingBottom: 36,
+    },
+    title: {
+      fontSize: 18,
+      fontFamily: "SoraBold",
+      color: colors.textPrimary,
+      textAlign: "center",
+      marginBottom: 4,
+    },
+    subtitle: {
+      fontSize: 13,
+      fontFamily: "Sora",
+      color: colors.textSecondary,
+      textAlign: "center",
+      marginBottom: 20,
+    },
+    input: {
+      backgroundColor: colors.surfaceMuted,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      borderRadius: 12,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      fontSize: 15,
+      fontFamily: "Sora",
+      color: colors.textPrimary,
+      marginBottom: 20,
+    },
+    sectionLabel: {
+      fontSize: 12,
+      fontFamily: "SoraSemiBold",
+      color: colors.textSecondary,
+      letterSpacing: 0.4,
+      textTransform: "uppercase",
+      marginBottom: 10,
+    },
+    tagRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 8,
+      marginBottom: 24,
+    },
+    tagChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      borderRadius: 20,
+      borderWidth: 1,
+      gap: 6,
+    },
+    tagDot: { width: 7, height: 7, borderRadius: 4 },
+    tagLabel: { fontSize: 13, fontFamily: "SoraSemiBold" },
+    primaryBtn: {
+      backgroundColor: colors.accent,
+      borderRadius: 14,
+      paddingVertical: 14,
+      alignItems: "center",
+      justifyContent: "center",
+      flexDirection: "row",
+      gap: 6,
+      marginBottom: 10,
+      marginTop: 4,
+    },
+    primaryBtnText: {
+      fontSize: 15,
+      fontFamily: "SoraSemiBold",
+      color: colors.background,
+    },
+    ghostBtn: { borderRadius: 14, paddingVertical: 13, alignItems: "center" },
+    ghostBtnText: { fontSize: 14, fontFamily: "Sora" },
+    emptyState: { alignItems: "center", paddingVertical: 32 },
+    emptyText: { fontSize: 14, fontFamily: "Sora", textAlign: "center" },
+    taskRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: colors.surfaceMuted,
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      gap: 10,
+    },
+    taskDot: { width: 8, height: 8, borderRadius: 4 },
+    taskName: { flex: 1, fontSize: 14, fontFamily: "SoraSemiBold" },
+    taskNameDone: { textDecorationLine: "line-through", opacity: 0.45 },
+    assignBtn: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    // Confirmation sheet
+    confirmSheet: {
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      paddingHorizontal: 24,
+      paddingTop: 28,
+      paddingBottom: 40,
+      alignItems: "center",
+    },
+    confirmIcon: {
+      width: 52,
+      height: 52,
+      borderRadius: 26,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 16,
+    },
+    confirmTitle: {
+      fontSize: 18,
+      fontFamily: "SoraBold",
+      marginBottom: 8,
+      textAlign: "center",
+    },
+    confirmBody: {
+      fontSize: 13,
+      fontFamily: "Sora",
+      textAlign: "center",
+      lineHeight: 20,
+      marginBottom: 20,
+    },
+    confirmCard: {
+      width: "100%",
+      borderRadius: 12,
+      borderWidth: StyleSheet.hairlineWidth,
+      padding: 14,
+      marginBottom: 24,
+    },
+    confirmCardLabel: { fontSize: 12, fontFamily: "Sora", marginBottom: 4 },
+    confirmCardValue: { fontSize: 15, fontFamily: "SoraSemiBold" },
+    confirmBtnRow: { flexDirection: "row", gap: 12, width: "100%" },
+    confirmSecondary: {
+      flex: 1,
+      borderRadius: 14,
+      paddingVertical: 14,
+      alignItems: "center",
+    },
+    confirmSecondaryText: { fontSize: 14, fontFamily: "SoraSemiBold" },
+    confirmPrimary: {
+      flex: 1,
+      borderRadius: 14,
+      paddingVertical: 14,
+      alignItems: "center",
+    },
+    confirmPrimaryText: { fontSize: 14, fontFamily: "SoraBold" },
+  });
+}

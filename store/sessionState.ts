@@ -53,11 +53,6 @@ export const FLOWS = {
     { type: "Mindful Moment", duration: SESSION_TYPES["Mindful Moment"] },
     { type: "Quick Task", duration: SESSION_TYPES["Quick Task"] },
   ],
-  "Debug Flow": [
-    { type: "Session 1", duration: 1 * 60 },
-    { type: "Session 2", duration: 1 * 60 },
-    { type: "Session 3", duration: 1 * 60 },
-  ],
 };
 
 export interface SessionState {
@@ -117,7 +112,7 @@ export const useSessionStore = create<SessionState>()(
     (set, get) => {
       let startTimeRef: number | null = null;
       let pausedTimeRef = 0;
-      let intervalRef: NodeJS.Timeout | null = null;
+      let intervalRef: ReturnType<typeof setInterval> | null = null;
       let backgroundTimeRef: number | null = null;
       let initialDurationRef: number | null = null;
       let lastPauseTimeRef: number | null = null;
@@ -165,7 +160,7 @@ export const useSessionStore = create<SessionState>()(
               const elapsedSeconds = Math.floor(elapsedMs / 1000);
               const remaining = Math.max(
                 0,
-                initialDurationRef - elapsedSeconds
+                initialDurationRef - elapsedSeconds,
               );
 
               if (remaining <= 0) {
@@ -279,23 +274,18 @@ export const useSessionStore = create<SessionState>()(
 
         // Start a predefined flow
         startFlow: (flowId) => {
-          console.log("Starting flow:", flowId);
           const flow = useFlowStore
             .getState()
             .customFlows.find((f) => f.id === flowId);
-          console.log("Flow data:", flow);
 
           if (!flow || flow.steps.length === 0) {
-            console.log("Invalid or empty flow");
             return;
           }
 
           const firstSession = flow.steps[0];
-          console.log("First session:", firstSession);
 
           // Clear any existing intervals
           if (get().isRunning) {
-            console.log("Stopping current session");
             set({
               isRunning: false,
               isPaused: false,
@@ -312,7 +302,6 @@ export const useSessionStore = create<SessionState>()(
             sessionId: Date.now().toString(),
           };
 
-          console.log("Setting new state:", newState);
           set(newState);
         },
 
@@ -384,25 +373,21 @@ export const useSessionStore = create<SessionState>()(
             // Record session in session intelligence
             try {
               const sessionIntelligence = useSessionIntelligence.getState();
+              // initialDurationRef is the full session length; state.duration is remaining.
+              // Worked = full - remaining. Use initialDurationRef via closure.
+              const workedSeconds = initialDurationRef
+                ? Math.max(1, initialDurationRef - state.duration)
+                : Math.max(1, state.duration);
               sessionIntelligence.recordSession({
                 sessionType: state.sessionType,
-                duration: state.duration,
+                duration: workedSeconds,
                 completed: true,
-                focusQuality: 7, // Default value, can be enhanced later
-                energyLevel: 7, // Default value, can be enhanced later
-                interruptions: 0, // Default value, can be enhanced later
-                flowId: state.currentFlowId, // Pass flowId
+                flowId: state.currentFlowId,
               });
             } catch (error) {
-              console.log("Error recording session in intelligence:", error);
+              console.error("Error recording session:", error);
             }
 
-            console.log("completeSession called with state:", {
-              currentFlowId: state.currentFlowId,
-              currentFlowStep: state.currentFlowStep,
-              sessionType: state.sessionType,
-              duration: state.duration,
-            });
             const today = new Date().toISOString().split("T")[0];
             const yesterday = new Date();
             yesterday.setDate(yesterday.getDate() - 1);
@@ -457,14 +442,6 @@ export const useSessionStore = create<SessionState>()(
                 .customFlows.find((f) => f.id === state.currentFlowId);
               const nextStep = state.currentFlowStep + 1;
 
-              console.log("Flow completion logic:", {
-                flowId: state.currentFlowId,
-                flow: flow,
-                currentStep: state.currentFlowStep,
-                nextStep: nextStep,
-                totalSteps: flow?.steps.length,
-              });
-
               if (flow && nextStep < flow.steps.length) {
                 // Update the session data for the next step
                 newFlowStep = nextStep;
@@ -516,10 +493,7 @@ export const useSessionStore = create<SessionState>()(
                     success: true,
                   });
                 } catch (error) {
-                  console.log(
-                    "Error recording flow completion in intelligence:",
-                    error
-                  );
+                  console.error("Error recording flow completion:", error);
                 }
 
                 return {
@@ -586,20 +560,17 @@ export const useSessionStore = create<SessionState>()(
             // Record failed session in session intelligence
             try {
               const sessionIntelligence = useSessionIntelligence.getState();
+              const workedSeconds = initialDurationRef
+                ? Math.max(0, initialDurationRef - state.duration)
+                : 0;
               sessionIntelligence.recordSession({
                 sessionType: state.sessionType,
-                duration: state.duration,
+                duration: workedSeconds,
                 completed: false,
-                focusQuality: 3, // Default value for failed sessions
-                energyLevel: 4, // Default value for failed sessions
-                interruptions: 2, // Default value for failed sessions
-                flowId: state.currentFlowId, // Pass flowId
+                flowId: state.currentFlowId,
               });
             } catch (error) {
-              console.log(
-                "Error recording failed session in intelligence:",
-                error
-              );
+              console.error("Error recording failed session:", error);
             }
 
             // Only increment if we haven't reached the total sessions
@@ -654,7 +625,7 @@ export const useSessionStore = create<SessionState>()(
 
             const dayDifference = Math.floor(
               (todayReset.getTime() - lastSession.getTime()) /
-                (1000 * 60 * 60 * 24)
+                (1000 * 60 * 60 * 24),
             );
 
             // If it's been more than 1 day since the last session, reset the streak
@@ -777,6 +748,6 @@ export const useSessionStore = create<SessionState>()(
           await AsyncStorage.removeItem(name);
         },
       },
-    }
-  )
+    },
+  ),
 );

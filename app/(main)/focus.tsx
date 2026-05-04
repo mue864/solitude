@@ -7,25 +7,26 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
 } from "react";
 import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withDelay,
-  withSpring,
-  withTiming,
+    useAnimatedStyle,
+    useSharedValue,
+    withDelay,
+    withSequence,
+    withSpring,
+    withTiming,
 } from "react-native-reanimated";
 import Toast from "react-native-toast-message";
 
@@ -45,17 +46,17 @@ import { useNotifications } from "@/hooks/useNotifications";
 // ---------------------------------------------------------------------------
 // Session metadata
 // ---------------------------------------------------------------------------
-const SESSION_META: Record<SessionType, { emoji: string; label: string }> = {
-  Classic: { emoji: "🍅", label: "Classic" },
-  "Deep Focus": { emoji: "🧠", label: "Deep Focus" },
-  "Quick Task": { emoji: "⚡", label: "Quick Task" },
-  "Creative Time": { emoji: "🎨", label: "Creative" },
-  "Review Mode": { emoji: "📋", label: "Review" },
-  "Course Time": { emoji: "📚", label: "Course" },
-  "Short Break": { emoji: "☕", label: "Short Break" },
-  "Long Break": { emoji: "🌿", label: "Long Break" },
-  "Reset Session": { emoji: "🔄", label: "Reset" },
-  "Mindful Moment": { emoji: "🧘", label: "Mindful" },
+const SESSION_META: Record<SessionType, { icon: string; label: string }> = {
+  Classic: { icon: "timer-outline", label: "Classic" },
+  "Deep Focus": { icon: "eye-outline", label: "Deep Focus" },
+  "Quick Task": { icon: "flash-outline", label: "Quick Task" },
+  "Creative Time": { icon: "color-palette-outline", label: "Creative" },
+  "Review Mode": { icon: "document-text-outline", label: "Review" },
+  "Course Time": { icon: "school-outline", label: "Course" },
+  "Short Break": { icon: "cafe-outline", label: "Short Break" },
+  "Long Break": { icon: "leaf-outline", label: "Long Break" },
+  "Reset Session": { icon: "refresh-outline", label: "Reset" },
+  "Mindful Moment": { icon: "moon-outline", label: "Mindful" },
 };
 
 const SESSION_CHIP_ORDER: SessionType[] = [
@@ -181,6 +182,7 @@ export default function Focus() {
   const idleTranslateY = useSharedValue(isActive ? -14 : 0);
   const activeOpacity = useSharedValue(isActive ? 1 : 0);
   const timerScale = useSharedValue(isActive ? 1.08 : 1);
+  const timerAreaOpacity = useSharedValue(1);
 
   useEffect(() => {
     const toActive = isRunning || isPaused;
@@ -201,6 +203,17 @@ export default function Focus() {
     });
   }, [isRunning, isPaused]);
 
+  const prevSessionType = useRef<SessionType>(sessionType);
+  useEffect(() => {
+    if (prevSessionType.current === sessionType) return;
+    prevSessionType.current = sessionType;
+    // pure fade: out then in
+    timerAreaOpacity.value = withSequence(
+      withTiming(0, { duration: 110 }),
+      withTiming(1, { duration: 190 }),
+    );
+  }, [sessionType]);
+
   const idleStyle = useAnimatedStyle(() => ({
     opacity: idleOpacity.value,
     transform: [{ translateY: idleTranslateY.value }],
@@ -216,6 +229,10 @@ export default function Focus() {
 
   const timerStyle = useAnimatedStyle(() => ({
     transform: [{ scale: timerScale.value }],
+  }));
+
+  const timerAreaStyle = useAnimatedStyle(() => ({
+    opacity: timerAreaOpacity.value,
   }));
 
   // ── Quote logic ───────────────────────────────────────────────────────────
@@ -283,22 +300,21 @@ export default function Focus() {
   }, []);
 
   useEffect(() => {
-    if (isPaused && !prevIsRunning.current) {
-      notifications.showSessionPauseNotification();
-      notifications.updateSessionState(false, true);
-    } else if (isRunning && prevIsRunning.current === false) {
-      if (!isNewSession) notifications.showSessionResumeNotification();
-      notifications.updateSessionState(true, false);
-    } else if (!isRunning && prevIsRunning.current) {
+    if (!isRunning && !isPaused) {
       notifications.updateSessionState(false, false);
+    } else if (isRunning) {
+      notifications.updateSessionState(true, false);
     }
   }, [isRunning, isPaused, isNewSession]);
 
   useEffect(() => {
     if (isRunning && isNewSession) {
-      notifications.showSessionStartNotification(sessionType, durationMinutes);
+      const mins = Math.floor(duration / 60);
+      notifications.showSessionStartNotification(sessionType, mins);
+      notifications.scheduleSessionEndNotification(sessionType, mins);
     }
-  }, [isRunning, isNewSession, sessionType, durationMinutes]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRunning, isNewSession]);
 
   // ── Session completion tracking ───────────────────────────────────────────
   useEffect(() => {
@@ -318,10 +334,6 @@ export default function Focus() {
   // ── Handlers ──────────────────────────────────────────────────────────────
   const handleSessionStart = async () => {
     resumeSession();
-    await notifications.scheduleSessionEndNotification(
-      sessionType,
-      durationMinutes,
-    );
   };
 
   const handleSessionEnd = async () => {
@@ -437,10 +449,17 @@ export default function Focus() {
       </Animated.View>
 
       {/* Timer */}
-      <View style={styles.timerArea}>
-        <Text style={[styles.sessionLabel, { color: colors.textSecondary }]}>
-          {SESSION_META[sessionType]?.emoji} {SESSION_META[sessionType]?.label}
-        </Text>
+      <Animated.View style={[styles.timerArea, timerAreaStyle]}>
+        <View style={styles.sessionLabelRow}>
+          <Ionicons
+            name={SESSION_META[sessionType]?.icon as any}
+            size={13}
+            color={colors.textSecondary}
+          />
+          <Text style={[styles.sessionLabel, { color: colors.textSecondary }]}>
+            {SESSION_META[sessionType]?.label}
+          </Text>
+        </View>
         <TouchableOpacity
           onPress={() =>
             !isRunning && !isPaused && !currentFlowId
@@ -460,7 +479,7 @@ export default function Focus() {
             {durationMinutes} min · tap to adjust
           </Text>
         </Animated.View>
-      </View>
+      </Animated.View>
 
       {/* Controls */}
       <View style={styles.controlsWrap}>
@@ -480,19 +499,23 @@ export default function Focus() {
                 <TouchableOpacity
                   key={type}
                   onPress={() => setSessionType(type)}
+                  activeOpacity={0.7}
                   style={[
                     styles.chip,
                     {
-                      backgroundColor: sel
-                        ? colors.accentMuted
-                        : colors.surfaceMuted,
-                      borderColor: sel ? colors.accent : colors.border,
+                      backgroundColor: sel ? colors.accentMuted : "transparent",
+                      borderColor: sel
+                        ? colors.accent + "40"
+                        : colors.border + "60",
                     },
                   ]}
                 >
-                  <Text style={styles.chipEmoji}>
-                    {SESSION_META[type].emoji}
-                  </Text>
+                  <Ionicons
+                    name={SESSION_META[type].icon as any}
+                    size={13}
+                    color={sel ? colors.accent : colors.textSecondary}
+                    style={!sel ? { opacity: 0.55 } : undefined}
+                  />
                   <Text
                     style={[
                       styles.chipLabel,
@@ -740,7 +763,6 @@ const styles = StyleSheet.create({
   sessionLabel: {
     fontSize: 15,
     fontFamily: "SoraSemiBold",
-    marginBottom: 16,
     letterSpacing: 0.4,
   },
   timer: {
@@ -762,23 +784,34 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",
     paddingHorizontal: 24,
-    gap: 12,
+    gap: 14,
     justifyContent: "flex-start",
     paddingTop: 4,
   },
   activeControls: { justifyContent: "center" },
-  chipRow: { gap: 8 },
+  chipRow: { gap: 6, alignItems: "center", paddingHorizontal: 2 },
   chip: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 24,
-    borderWidth: 1,
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
   },
-  chipEmoji: { fontSize: 14 },
-  chipLabel: { fontSize: 13, fontFamily: "SoraSemiBold" },
+  sessionLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginBottom: 16,
+    justifyContent: "center",
+    textAlign: "center",
+  },
+  chipLabel: {
+    fontSize: 12,
+    fontFamily: "Sora",
+    letterSpacing: 0.1,
+  },
   taskStrip: {
     flexDirection: "row",
     alignItems: "center",
@@ -794,14 +827,16 @@ const styles = StyleSheet.create({
   addTaskBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 18,
-    paddingVertical: 9,
-    borderRadius: 22,
-    borderWidth: 1,
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderStyle: "dashed",
+    opacity: 0.85,
   },
-  addTaskText: { fontSize: 13, fontFamily: "Sora" },
-  startWrap: { width: 150 },
+  addTaskText: { fontSize: 12, fontFamily: "Sora" },
+  startWrap: { width: "100%", maxWidth: 280, marginTop: 2 },
   intelLink: { paddingVertical: 4 },
   intelLinkText: { fontSize: 13, fontFamily: "Sora", letterSpacing: 0.3 },
   activeBtnRow: {

@@ -12,6 +12,8 @@ function TabNavigator() {
         screenOptions={{
           headerShown: false,
           tabBarStyle: styles.tabBar,
+          animation: "fade",
+          sceneStyle: { backgroundColor: "transparent" },
         }}
         tabBar={(props) => <CustomTabBar {...props} />}
       >

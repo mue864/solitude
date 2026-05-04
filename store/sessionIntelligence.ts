@@ -84,7 +84,7 @@ interface SessionIntelligenceState {
   getSessionTypeStats: (sessionType: string) => SessionPattern | null;
   recordFlowCompletion: (completion: FlowCompletionRecord) => void;
   getMostCompletedFlows: (
-    topN?: number
+    topN?: number,
   ) => { flowId: string; flowName: string; count: number }[];
   getFlowStreaks: () => { flowId: string; flowName: string; streak: number }[];
   getFlowSuccessRates: () => {
@@ -94,7 +94,11 @@ interface SessionIntelligenceState {
   }[];
   // Milestone functions
   getNextMilestone: () => number;
-  getMilestoneProgress: () => { current: number; next: number; progress: number };
+  getMilestoneProgress: () => {
+    current: number;
+    next: number;
+    progress: number;
+  };
   // Data cleanup function
   cleanupSessionData: () => void;
 }
@@ -103,7 +107,7 @@ const calculateProductivityScore = (
   completionRate: number,
   avgFocusQuality: number,
   avgEnergyLevel: number,
-  streak: number
+  streak: number,
 ): number => {
   const completionWeight = 0.4;
   const focusWeight = 0.3;
@@ -126,16 +130,20 @@ const calculateProductivityScore = (
 const analyzeFocusTrend = (records: SessionRecord[]): string => {
   if (records.length < 3) return "stable";
 
-  const recentRecords = records.slice(-3).filter(r => r.completed);
-  const olderRecords = records.slice(-6, -3).filter(r => r.completed);
+  const recentRecords = records
+    .slice(-3)
+    .filter((r) => r.completed && r.focusQuality !== undefined);
+  const olderRecords = records
+    .slice(-6, -3)
+    .filter((r) => r.completed && r.focusQuality !== undefined);
 
   if (olderRecords.length === 0 || recentRecords.length === 0) return "stable";
 
   const recentAvg =
-    recentRecords.reduce((sum, r) => sum + (r.focusQuality !== undefined ? r.focusQuality : 5), 0) /
+    recentRecords.reduce((sum, r) => sum + r.focusQuality!, 0) /
     recentRecords.length;
   const olderAvg =
-    olderRecords.reduce((sum, r) => sum + (r.focusQuality !== undefined ? r.focusQuality : 5), 0) /
+    olderRecords.reduce((sum, r) => sum + r.focusQuality!, 0) /
     olderRecords.length;
 
   if (recentAvg > olderAvg + 1) return "improving";
@@ -185,36 +193,42 @@ export const getEndOfDay = (timestamp: number): number => {
 };
 
 // Improved session filtering functions
-const getSessionsInDateRange = (records: SessionRecord[], startTime: number, endTime: number): SessionRecord[] => {
-  return records.filter(r => r.timestamp >= startTime && r.timestamp < endTime);
-};
-
-const getCompletedSessionsInDateRange = (records: SessionRecord[], startTime: number, endTime: number): SessionRecord[] => {
-  return getSessionsInDateRange(records, startTime, endTime).filter(r => r.completed);
+const getSessionsInDateRange = (
+  records: SessionRecord[],
+  startTime: number,
+  endTime: number,
+): SessionRecord[] => {
+  return records.filter(
+    (r) => r.timestamp >= startTime && r.timestamp < endTime,
+  );
 };
 
 // Milestone calculation utilities
 const MILESTONE_THRESHOLDS = [5, 10, 15, 30, 50, 75, 100, 150, 200, 365];
 
 const getNextMilestone = (currentStreak: number): number => {
-  return MILESTONE_THRESHOLDS.find((threshold) => threshold > currentStreak) ||
-    currentStreak + 50;
+  return (
+    MILESTONE_THRESHOLDS.find((threshold) => threshold > currentStreak) ||
+    currentStreak + 50
+  );
 };
 
-const getMilestoneProgress = (currentStreak: number): {
+const getMilestoneProgress = (
+  currentStreak: number,
+): {
   current: number;
   next: number;
   progress: number;
 } => {
   const nextMilestone = getNextMilestone(currentStreak);
-  const previousMilestone = MILESTONE_THRESHOLDS.find(
-    (threshold) => threshold <= currentStreak
-  ) || 0;
+  const previousMilestone =
+    MILESTONE_THRESHOLDS.find((threshold) => threshold <= currentStreak) || 0;
   const progress =
     previousMilestone === nextMilestone
       ? 100
       : ((currentStreak - previousMilestone) /
-          (nextMilestone - previousMilestone)) * 100;
+          (nextMilestone - previousMilestone)) *
+        100;
 
   return {
     current: currentStreak,
@@ -243,23 +257,15 @@ export const useSessionIntelligence = create<SessionIntelligenceState>()(
 
       // Record a new session
       recordSession: (session) => {
-        // Validation and debugging
-        console.log('📝 Recording session:', session);
-        
-        if (session.duration <= 0) {
-          console.warn('⚠️ Warning: Session duration is 0 or negative:', session.duration);
-        }
-        
-        const currentTime = Date.now();
+        if (session.duration < 0) return;
+
         const newRecord: SessionRecord = {
           ...session,
-          id: currentTime.toString(),
-          timestamp: currentTime,
-          // Ensure duration is at least 1 second if session is completed
-          duration: session.completed && session.duration <= 0 ? 1 : session.duration,
+          id: Date.now().toString(),
+          timestamp: Date.now(),
+          duration:
+            session.completed && session.duration <= 0 ? 1 : session.duration,
         };
-        
-        console.log('📝 Final session record:', newRecord);
 
         set((state) => {
           const newRecords = [...state.sessionRecords, newRecord];
@@ -272,31 +278,41 @@ export const useSessionIntelligence = create<SessionIntelligenceState>()(
 
           sessionTypes.forEach((type) => {
             const typeRecords = newRecords.filter(
-              (r) => r.sessionType === type
+              (r) => r.sessionType === type,
             );
             const completed = typeRecords.filter((r) => r.completed);
+            const ratedCompleted = completed.filter(
+              (r) => r.focusQuality !== undefined,
+            );
+            const ratedEnergy = completed.filter(
+              (r) => r.energyLevel !== undefined,
+            );
 
             patterns[type] = {
               totalSessions: typeRecords.length,
               completedSessions: completed.length,
               successRate: (completed.length / typeRecords.length) * 100,
               averageFocusQuality:
-                completed.length > 0
-                  ? completed.reduce((sum, r) => sum + (r.focusQuality !== undefined ? r.focusQuality : 5), 0) /
-                    completed.length
-                  : 5,
+                ratedCompleted.length > 0
+                  ? ratedCompleted.reduce(
+                      (sum, r) => sum + r.focusQuality!,
+                      0,
+                    ) / ratedCompleted.length
+                  : 0,
               averageEnergyLevel:
-                completed.length > 0
-                  ? completed.reduce((sum, r) => sum + (r.energyLevel !== undefined ? r.energyLevel : 5), 0) /
-                    completed.length
-                  : 5,
+                ratedEnergy.length > 0
+                  ? ratedEnergy.reduce((sum, r) => sum + r.energyLevel!, 0) /
+                    ratedEnergy.length
+                  : 0,
               averageInterruptions:
                 completed.length > 0
-                  ? completed.reduce((sum, r) => sum + (r.interruptions || 0), 0) /
-                    completed.length
+                  ? completed.reduce(
+                      (sum, r) => sum + (r.interruptions || 0),
+                      0,
+                    ) / completed.length
                   : 0,
               bestTimeSlots: getPeakProductivityHours(typeRecords).map(
-                (h) => `${h}:00`
+                (h) => `${h}:00`,
               ),
             };
           });
@@ -304,48 +320,60 @@ export const useSessionIntelligence = create<SessionIntelligenceState>()(
           // Update user stats
           const totalSessions = newRecords.length;
           const completedSessions = newRecords.filter(
-            (r) => r.completed
+            (r) => r.completed,
           ).length;
           const completionRate =
             totalSessions > 0 ? (completedSessions / totalSessions) * 100 : 0;
 
           const completedRecords = newRecords.filter((r) => r.completed);
+          const ratedFocusRecords = completedRecords.filter(
+            (r) => r.focusQuality !== undefined,
+          );
+          const ratedEnergyRecords = completedRecords.filter(
+            (r) => r.energyLevel !== undefined,
+          );
+
           const averageFocusQuality =
-            completedRecords.length > 0
-              ? completedRecords.reduce(
-                  (sum, r) => sum + (r.focusQuality !== undefined ? r.focusQuality : 5),
-                  0
-                ) / completedRecords.length
-              : 5;
+            ratedFocusRecords.length > 0
+              ? ratedFocusRecords.reduce((sum, r) => sum + r.focusQuality!, 0) /
+                ratedFocusRecords.length
+              : 0;
           const averageEnergyLevel =
-            completedRecords.length > 0
-              ? completedRecords.reduce(
-                  (sum, r) => sum + (r.energyLevel !== undefined ? r.energyLevel : 5),
-                  0
-                ) / completedRecords.length
-              : 5;
+            ratedEnergyRecords.length > 0
+              ? ratedEnergyRecords.reduce((sum, r) => sum + r.energyLevel!, 0) /
+                ratedEnergyRecords.length
+              : 0;
 
           // Find most successful session type
           const mostSuccessfulSession =
             Object.entries(patterns).sort(
-              ([, a], [, b]) => b.successRate - a.successRate
+              ([, a], [, b]) => b.successRate - a.successRate,
             )[0]?.[0] || "Classic";
 
-          // Calculate current streak
+          // Calculate current streak: consecutive days with at least one completed session
           let currentStreak = 0;
-          for (let i = newRecords.length - 1; i >= 0; i--) {
-            if (newRecords[i].completed) {
+          const today = getStartOfDay(Date.now());
+          const msPerDay = 24 * 60 * 60 * 1000;
+          for (let i = 0; i <= 365; i++) {
+            const dayStart = today - i * msPerDay;
+            const dayEnd = dayStart + msPerDay;
+            const hadSession = newRecords.some(
+              (r) =>
+                r.completed && r.timestamp >= dayStart && r.timestamp < dayEnd,
+            );
+            if (hadSession) {
               currentStreak++;
-            } else {
+            } else if (i > 0) {
+              // Allow today to have no session yet without breaking streak
               break;
             }
           }
 
           const productivityScore = calculateProductivityScore(
             completionRate,
-            averageFocusQuality,
-            averageEnergyLevel,
-            currentStreak
+            averageFocusQuality || 5,
+            averageEnergyLevel || 5,
+            currentStreak,
           );
 
           const focusTrend = analyzeFocusTrend(newRecords);
@@ -370,7 +398,7 @@ export const useSessionIntelligence = create<SessionIntelligenceState>()(
       // Get session recommendations
       getRecommendations: () => {
         const state = get();
-        const { patterns, userStats } = state;
+        const { patterns } = state;
 
         if (Object.keys(patterns).length === 0) {
           return {
@@ -384,7 +412,7 @@ export const useSessionIntelligence = create<SessionIntelligenceState>()(
 
         // Find the session type with the highest success rate
         const bestSession = Object.entries(patterns).sort(
-          ([, a], [, b]) => b.successRate - a.successRate
+          ([, a], [, b]) => b.successRate - a.successRate,
         )[0];
 
         if (!bestSession) {
@@ -420,29 +448,35 @@ export const useSessionIntelligence = create<SessionIntelligenceState>()(
         const peakHours = getPeakProductivityHours(sessionRecords);
         const bestSessionStreak = Math.max(
           ...Object.values(state.patterns).map((p) => p.completedSessions),
-          0
+          0,
         );
 
         const recommendations: string[] = [];
 
-        if (userStats.averageFocusQuality < 6) {
+        if (
+          userStats.averageFocusQuality > 0 &&
+          userStats.averageFocusQuality < 6
+        ) {
           recommendations.push(
-            "Try reducing distractions during your sessions."
+            "Try reducing distractions during your sessions.",
           );
         }
-        if (userStats.averageEnergyLevel < 6) {
+        if (
+          userStats.averageEnergyLevel > 0 &&
+          userStats.averageEnergyLevel < 6
+        ) {
           recommendations.push(
-            "Consider taking breaks between sessions to maintain energy."
+            "Consider taking breaks between sessions to maintain energy.",
           );
         }
         if (userStats.completionRate < 70) {
           recommendations.push(
-            "Start with shorter sessions to build momentum."
+            "Start with shorter sessions to build momentum.",
           );
         }
         if (peakHours.length > 0) {
           recommendations.push(
-            `Your peak productivity hours are ${peakHours.map((h) => `${h}:00`).join(", ")}.`
+            `Your peak productivity hours are ${peakHours.map((h) => `${h}:00`).join(", ")}.`,
           );
         }
 
@@ -465,33 +499,45 @@ export const useSessionIntelligence = create<SessionIntelligenceState>()(
         const twoWeeksAgo = now - 14 * 24 * 60 * 60 * 1000;
 
         // Use improved session filtering for more accurate results
-        const thisWeekRecords = getSessionsInDateRange(sessionRecords, oneWeekAgo, now);
-        const lastWeekRecords = getSessionsInDateRange(sessionRecords, twoWeeksAgo, oneWeekAgo);
+        const thisWeekRecords = getSessionsInDateRange(
+          sessionRecords,
+          oneWeekAgo,
+          now,
+        );
+        const lastWeekRecords = getSessionsInDateRange(
+          sessionRecords,
+          twoWeeksAgo,
+          oneWeekAgo,
+        );
 
         const sessionsCompleted = thisWeekRecords.filter(
-          (r) => r.completed
+          (r) => r.completed,
         ).length;
         const totalFocusTime = thisWeekRecords
           .filter((r) => r.completed)
           .reduce((sum, r) => sum + r.duration, 0);
         const completedThisWeek = thisWeekRecords.filter((r) => r.completed);
+        const ratedThisWeek = completedThisWeek.filter(
+          (r) => r.focusQuality !== undefined,
+        );
         const averageFocusQuality =
-          completedThisWeek.length > 0
-            ? completedThisWeek
-                .reduce((sum, r) => sum + (r.focusQuality !== undefined ? r.focusQuality : 5), 0) /
-              completedThisWeek.length
-            : 5;
+          ratedThisWeek.length > 0
+            ? ratedThisWeek.reduce((sum, r) => sum + r.focusQuality!, 0) /
+              ratedThisWeek.length
+            : 0;
 
         // Calculate improvement
         const completedLastWeek = lastWeekRecords.filter((r) => r.completed);
+        const ratedLastWeek = completedLastWeek.filter(
+          (r) => r.focusQuality !== undefined,
+        );
         const lastWeekQuality =
-          completedLastWeek.length > 0
-            ? completedLastWeek
-                .reduce((sum, r) => sum + (r.focusQuality !== undefined ? r.focusQuality : 5), 0) /
-              completedLastWeek.length
-            : 5;
+          ratedLastWeek.length > 0
+            ? ratedLastWeek.reduce((sum, r) => sum + r.focusQuality!, 0) /
+              ratedLastWeek.length
+            : 0;
         const improvement =
-          lastWeekQuality > 0
+          lastWeekQuality > 0 && averageFocusQuality > 0
             ? ((averageFocusQuality - lastWeekQuality) / lastWeekQuality) * 100
             : 0;
 
@@ -508,21 +554,22 @@ export const useSessionIntelligence = create<SessionIntelligenceState>()(
           "No data";
 
         // Focus quality trend
-        const recentCompletedSessions = thisWeekRecords
+        const recentRated = thisWeekRecords
           .slice(-3)
-          .filter((r) => r.completed);
+          .filter((r) => r.completed && r.focusQuality !== undefined);
         const recentQuality =
-          recentCompletedSessions.length > 0
-            ? recentCompletedSessions
-                .reduce((sum, r) => sum + (r.focusQuality !== undefined ? r.focusQuality : 5), 0) /
-              recentCompletedSessions.length
+          recentRated.length > 0
+            ? recentRated.reduce((sum, r) => sum + r.focusQuality!, 0) /
+              recentRated.length
             : averageFocusQuality;
         const focusQualityTrend =
-          recentQuality > averageFocusQuality
-            ? "improving"
-            : recentQuality < averageFocusQuality
-              ? "declining"
-              : "stable";
+          averageFocusQuality === 0
+            ? "stable"
+            : recentQuality > averageFocusQuality
+              ? "improving"
+              : recentQuality < averageFocusQuality
+                ? "declining"
+                : "stable";
 
         return {
           sessionsCompleted,
@@ -594,7 +641,7 @@ export const useSessionIntelligence = create<SessionIntelligenceState>()(
           else streaks[c.flowId].streak = 0;
         });
         return Object.entries(streaks).map(
-          ([flowId, { flowName, streak }]) => ({ flowId, flowName, streak })
+          ([flowId, { flowName, streak }]) => ({ flowId, flowName, streak }),
         );
       },
       getFlowSuccessRates: () => {
@@ -614,60 +661,23 @@ export const useSessionIntelligence = create<SessionIntelligenceState>()(
             flowId,
             flowName,
             successRate: total > 0 ? (success / total) * 100 : 0,
-          })
+          }),
         );
       },
-      
+
       // Milestone functions
       getNextMilestone: () => {
         const state = get();
         return getNextMilestone(state.userStats.currentStreak);
       },
-      
+
       getMilestoneProgress: () => {
         const state = get();
         return getMilestoneProgress(state.userStats.currentStreak);
       },
-      
-      // Data cleanup function
-      cleanupSessionData: () => {
-        set((state) => {
-          console.log('🧹 Cleaning up session data...');
-          const currentTime = Date.now();
-          const oneWeekAgo = currentTime - 7 * 24 * 60 * 60 * 1000;
-          
-          const cleanedRecords = state.sessionRecords.map((record, index) => {
-            let needsUpdate = false;
-            const updatedRecord = { ...record };
-            
-            // Fix zero durations for completed sessions with realistic durations
-            if (record.completed && record.duration <= 0) {
-              // Use realistic durations for testing sessions (30 seconds to 5 minutes)
-              const realisticDurations = [30, 60, 90, 120, 180, 240, 300]; // 30s to 5min
-              const randomDuration = realisticDurations[index % realisticDurations.length];
-              updatedRecord.duration = randomDuration;
-              needsUpdate = true;
-              console.log(`🔧 Fixed duration for session ${record.id}: 0 -> ${randomDuration} seconds`);
-            }
-            
-            // Fix future timestamps - set to recent past
-            if (record.timestamp > currentTime) {
-              // Distribute sessions over the past week
-              updatedRecord.timestamp = oneWeekAgo + (index * 24 * 60 * 60 * 1000);
-              needsUpdate = true;
-              console.log(`🔧 Fixed timestamp for session ${record.id}: ${record.timestamp} -> ${updatedRecord.timestamp}`);
-            }
-            
-            return updatedRecord;
-          });
-          
-          console.log(`🧹 Cleaned ${cleanedRecords.length} session records`);
-          return {
-            ...state,
-            sessionRecords: cleanedRecords,
-          };
-        });
-      },
+
+      // Data cleanup function (no-op — kept for interface compat)
+      cleanupSessionData: () => {},
     }),
     {
       name: "session-intelligence-store",
@@ -683,6 +693,6 @@ export const useSessionIntelligence = create<SessionIntelligenceState>()(
           await AsyncStorage.removeItem(key);
         },
       },
-    }
-  )
+    },
+  ),
 );

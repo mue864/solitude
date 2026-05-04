@@ -1,5 +1,6 @@
 import BottomSheet from "@/components/BottomSheet";
 import { useTheme } from "@/context/ThemeContext";
+import { useOnboardingStore } from "@/store/onboardingStore";
 import { useSessionIntelligence } from "@/store/sessionIntelligence";
 import { Audio } from "expo-av";
 import React, { useEffect, useState } from "react";
@@ -48,6 +49,15 @@ export default function SessionCompletionModal({
   const checkmarkScale = useSharedValue(0);
   const { getProductivityInsights } = useSessionIntelligence();
   const insights = getProductivityInsights();
+  const workType = useOnboardingStore((state) => state.workType);
+
+  const BREAK_TIPS = {
+    screen: "Look 20 feet away for 20 seconds. Your eyes need the reset.",
+    reading: "Stand up and roll your shoulders. Physical rest matters too.",
+    writing: "Shake out your hands and wrists — they worked hard.",
+    creative: "Step away and look at something natural. Let ideas settle.",
+    other: "Take a short walk. Movement helps consolidate what you just did.",
+  };
 
   useEffect(() => {
     const loadSound = async () => {
@@ -79,8 +89,10 @@ export default function SessionCompletionModal({
     transform: [{ scale: checkmarkScale.value }],
   }));
 
+  const breakTip = workType ? BREAK_TIPS[workType] : null;
   const insight =
-    insights.length > 0 ? insights[0] : "Great job! Keep up the focus.";
+    breakTip ??
+    (insights.length > 0 ? insights[0] : "Great job! Keep up the focus.");
 
   return (
     <BottomSheet isVisible={isVisible} onClose={onClose}>

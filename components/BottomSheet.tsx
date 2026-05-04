@@ -13,7 +13,6 @@ import {
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
   withTiming,
 } from "react-native-reanimated";
 
@@ -31,21 +30,21 @@ export default function BottomSheet({
   children,
 }: BottomSheetProps) {
   const { colors } = useTheme();
-  const translateY = useSharedValue(600);
+  const sheetOpacity = useSharedValue(0);
   const overlayOpacity = useSharedValue(0);
 
   useEffect(() => {
     if (isVisible) {
-      overlayOpacity.value = withTiming(1, { duration: 220 });
-      translateY.value = withSpring(0, { damping: 26, stiffness: 220 });
+      overlayOpacity.value = withTiming(1, { duration: 200 });
+      sheetOpacity.value = withTiming(1, { duration: 220 });
     } else {
-      overlayOpacity.value = withTiming(0, { duration: 200 });
-      translateY.value = withTiming(600, { duration: 220 });
+      overlayOpacity.value = withTiming(0, { duration: 180 });
+      sheetOpacity.value = withTiming(0, { duration: 180 });
     }
   }, [isVisible]);
 
   const sheetStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: translateY.value }],
+    opacity: sheetOpacity.value,
   }));
 
   const overlayStyle = useAnimatedStyle(() => ({

@@ -17,7 +17,6 @@ interface AdvancedAnalyticsModalProps {
   onClose: () => void;
 }
 
-const { width: screenWidth } = Dimensions.get("window");
 
 export default function AdvancedAnalyticsModal({
   visible,
@@ -30,9 +29,9 @@ export default function AdvancedAnalyticsModal({
   const [selectedTimeframe, setSelectedTimeframe] = useState<
     "week" | "month" | "year"
   >("week");
-  const [selectedMetric, setSelectedMetric] = useState<
-    "productivity" | "focus" | "consistency"
-  >("productivity");
+  // const [selectedMetric, setSelectedMetric] = useState<
+  //   "productivity" | "focus" | "consistency"
+  // >("productivity");
 
   // Calculate advanced metrics
   const calculateAdvancedMetrics = () => {
@@ -52,17 +51,17 @@ export default function AdvancedAnalyticsModal({
     }
 
     const filteredSessions = sessionRecords.filter(
-      (session) => new Date(session.timestamp) >= timeframeStart
+      (session) => new Date(session.timestamp) >= timeframeStart,
     );
 
     const filteredFlows = flowCompletions.filter(
-      (flow) => new Date(flow.completedAt) >= timeframeStart
+      (flow) => new Date(flow.completedAt) >= timeframeStart,
     );
 
     // Productivity Score (weighted average of focus time, completion rate, and quality)
     const totalFocusTime = filteredSessions.reduce(
       (sum, session) => sum + session.duration,
-      0
+      0,
     );
     const avgFocusTime =
       filteredSessions.length > 0
@@ -80,7 +79,7 @@ export default function AdvancedAnalyticsModal({
         : 0;
 
     const productivityScore = Math.round(
-      avgFocusTime * 0.4 + completionRate * 100 * 0.4 + avgQuality * 0.2
+      avgFocusTime * 0.4 + completionRate * 100 * 0.4 + avgQuality * 0.2,
     );
 
     // Focus Consistency (standard deviation of focus times)
@@ -91,7 +90,7 @@ export default function AdvancedAnalyticsModal({
       focusTimes.reduce((sum, time) => sum + Math.pow(time - avgFocus, 2), 0) /
       focusTimes.length;
     const focusConsistency = Math.round(
-      100 - (Math.sqrt(variance) / avgFocus) * 100
+      100 - (Math.sqrt(variance) / avgFocus) * 100,
     );
 
     // Flow Efficiency (completion rate vs time spent)
@@ -105,7 +104,7 @@ export default function AdvancedAnalyticsModal({
           filteredFlows.length
         : 0;
     const flowEfficiency = Math.round(
-      flowCompletionRate * 100 * (avgFlowSteps > 0 ? 10 / avgFlowSteps : 1)
+      flowCompletionRate * 100 * (avgFlowSteps > 0 ? 10 / avgFlowSteps : 1),
     );
 
     // Peak Performance Hours
@@ -119,15 +118,15 @@ export default function AdvancedAnalyticsModal({
     });
 
     const avgHourProductivity = hourProductivity.map((total, hour) =>
-      hourCount[hour] > 0 ? total / hourCount[hour] : 0
+      hourCount[hour] > 0 ? total / hourCount[hour] : 0,
     );
     const peakHour = avgHourProductivity.indexOf(
-      Math.max(...avgHourProductivity)
+      Math.max(...avgHourProductivity),
     );
 
     // Streak Analysis
     const dates = filteredSessions.map((s) =>
-      new Date(s.timestamp).toDateString()
+      new Date(s.timestamp).toDateString(),
     );
     const uniqueDates = [...new Set(dates)].sort();
     let currentStreak = 0;
@@ -411,7 +410,7 @@ export default function AdvancedAnalyticsModal({
               </Text>
               <Text className="text-sm text-gray-600 dark:text-gray-400 font-Sora">
                 Schedule your most important tasks around {metrics.peakHour}:00
-                when you're most productive.
+                when you&apos;re most productive.
               </Text>
             </View>
           </View>
@@ -425,7 +424,7 @@ export default function AdvancedAnalyticsModal({
                 Maintain Your Streak
               </Text>
               <Text className="text-sm text-gray-600 dark:text-gray-400 font-Sora">
-                You're on a {metrics.currentStreak}-day streak! Keep it going
+                You&apos;re on a {metrics.currentStreak}-day streak! Keep it going
                 with daily focus sessions.
               </Text>
             </View>
@@ -453,7 +452,7 @@ export default function AdvancedAnalyticsModal({
   return (
     <Modal
       visible={visible}
-      animationType="slide"
+      animationType="fade"
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >

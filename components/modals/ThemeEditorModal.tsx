@@ -100,7 +100,7 @@ export default function ThemeEditorModal({
 
     Alert.alert(
       "Success",
-      `Theme "${theme.name}" ${isEditing ? "updated" : "created"} successfully!`
+      `Theme "${theme.name}" ${isEditing ? "updated" : "created"} successfully!`,
     );
     onClose();
   };
@@ -122,7 +122,7 @@ export default function ThemeEditorModal({
             onClose();
           },
         },
-      ]
+      ],
     );
   };
 
@@ -262,7 +262,7 @@ export default function ThemeEditorModal({
   return (
     <Modal
       visible={visible}
-      animationType="slide"
+      animationType="fade"
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >

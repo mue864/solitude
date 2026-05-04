@@ -1,6 +1,7 @@
 import AppIcon from "@/assets/svg/onboarding/app-icon.svg";
 import { Strings } from "@/constants";
-import { LinearGradient } from "expo-linear-gradient";
+import { useOnboardingStore } from "@/store/onboardingStore";
+import { useSessionStore } from "@/store/sessionState";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
@@ -11,12 +12,12 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import "../global.css";
-import { useOnboardingStore } from "@/store/onboardingStore";
-import { useSessionStore } from "@/store/sessionState";
 
 export default function Index() {
   const { checkAndResetStreak } = useSessionStore();
-  const isOnboardingComplete = useOnboardingStore((state) => state.isOnboardingFinished)
+  const isOnboardingComplete = useOnboardingStore(
+    (state) => state.isOnboardingFinished,
+  );
   const [animationLoaded, setAnimationLoaded] = useState(false);
 
   const iconSlideUp = useSharedValue(0);
@@ -58,32 +59,37 @@ export default function Index() {
         const switchPage = setTimeout(() => {
           router.replace("/(onboarding)/welcome");
         }, 500);
-         return () => clearTimeout(switchPage);
+        return () => clearTimeout(switchPage);
       }
-     
     }
   }, [animationLoaded, isOnboardingComplete, checkAndResetStreak]);
 
   return (
-    <LinearGradient
-      colors={["#2764A1", "#2A77C4", "#318CE7"]}
-      className="flex-1 justify-center items-center relative"
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: "#111318",
+        justifyContent: "center",
+        alignItems: "center",
+      }}
     >
       <Animated.View style={animatedIcon}>
         <AppIcon width={150} height={150} />
       </Animated.View>
 
       <Animated.View style={animatedText}>
-        <Text className="text-white text-3xl font-Courgete">
+        <Text
+          style={{ color: "#F5F1EB", fontSize: 30, fontFamily: "Courgette" }}
+        >
           {Strings.appName}
         </Text>
       </Animated.View>
 
-      <View className="absolute bottom-8 left-1/2 -translate-x-1/2">
-        <Text className="text-white text-2xl font-Sora">
+      <View style={{ position: "absolute", bottom: 32, alignSelf: "center" }}>
+        <Text style={{ color: "#8A8A96", fontSize: 20, fontFamily: "Sora" }}>
           {Strings.companyName}
         </Text>
       </View>
-    </LinearGradient>
+    </View>
   );
 }
