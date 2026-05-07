@@ -4,10 +4,11 @@ import TaskSwitchWarningModal from "@/components/modals/TaskSwitchWarningModal";
 import { TAG_COLOR } from "@/components/TaskCard";
 import TaskGroup from "@/components/TaskGroup";
 import { useTheme } from "@/context/ThemeContext";
+import { useSessionStore } from "@/store/sessionState";
 import { Task, TaskTag, useTaskStore } from "@/store/taskStore";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import React, { useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -27,6 +28,7 @@ const GROUPS: { label: string; tag: Exclude<TaskTag, null> }[] = [
 export default function Plan() {
   const { colors } = useTheme();
   const router = useRouter();
+  const isSessionActive = useSessionStore((s) => s.isRunning || s.isPaused);
   const {
     addTask,
     updateTask,
@@ -45,6 +47,7 @@ export default function Plan() {
   const [deletedTask, setDeletedTask] = useState<Task | null>(null);
   const [warningModalVisible, setWarningModalVisible] = useState(false);
   const [pendingTaskSwitch, setPendingTaskSwitch] = useState<Task | null>(null);
+  const [completedExpanded, setCompletedExpanded] = useState(false);
   const undoTimeout = useRef<NodeJS.Timeout | null>(null);
 
   const activeTasks = getActiveTasks();
@@ -72,6 +75,21 @@ export default function Plan() {
   const remainingCount = activeTasks.filter(
     (t) => t.id !== currentTaskId,
   ).length;
+
+  const totalCount = activeTasks.length + completedTasks.length;
+  const progressPct =
+    totalCount === 0
+      ? 0
+      : Math.round((completedTasks.length / totalCount) * 100);
+
+  const dateLabel = useMemo(() => {
+    const d = new Date();
+    return d.toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "short",
+      day: "numeric",
+    });
+  }, []);
 
   const handleAddTask = (data: { name: string; tag: TaskTag }) => {
     addTask({
@@ -185,61 +203,125 @@ export default function Plan() {
       >
         {/* Header */}
         <View style={s.header}>
-          <Text style={[s.title, { color: colors.textPrimary }]}>
-            Today's Plan
+          <Text style={[s.dateLabel, { color: colors.textSecondary }]}>
+            {dateLabel}
           </Text>
-          <Text style={[s.subtitle, { color: colors.textSecondary }]}>
-            {activeTasks.length === 0
-              ? "No tasks yet — add one below"
-              : `${activeTasks.length} task${activeTasks.length !== 1 ? "s" : ""} remaining`}
-          </Text>
+          <Text style={[s.title, { color: colors.textPrimary }]}>Today</Text>
+
+          {/* Summary strip */}
+          {totalCount > 0 ? (
+            <View style={s.summaryRow}>
+              <View
+                style={[
+                  s.statChip,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <View style={[s.statDot, { backgroundColor: colors.accent }]} />
+                <Text style={[s.statValue, { color: colors.textPrimary }]}>
+                  {activeTasks.length}
+                </Text>
+                <Text style={[s.statLabel, { color: colors.textSecondary }]}>
+                  active
+                </Text>
+              </View>
+              <View
+                style={[
+                  s.statChip,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="checkmark"
+                  size={12}
+                  color={colors.textSecondary}
+                />
+                <Text style={[s.statValue, { color: colors.textPrimary }]}>
+                  {completedTasks.length}
+                </Text>
+                <Text style={[s.statLabel, { color: colors.textSecondary }]}>
+                  done
+                </Text>
+              </View>
+              <View style={s.progressWrap}>
+                <View
+                  style={[
+                    s.progressTrack,
+                    { backgroundColor: colors.surfaceMuted },
+                  ]}
+                >
+                  <View
+                    style={[
+                      s.progressFill,
+                      {
+                        width: `${progressPct}%`,
+                        backgroundColor: colors.accent,
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={[s.progressText, { color: colors.textSecondary }]}>
+                  {progressPct}%
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <Text style={[s.subtitle, { color: colors.textSecondary }]}>
+              A calm space to plan your day
+            </Text>
+          )}
         </View>
 
         {/* Pinned current task */}
         {currentTask && !currentTask.completed && (
           <View style={s.section}>
-            <Text style={[s.sectionLabel, { color: colors.textSecondary }]}>
-              Now Focused
-            </Text>
+            <View style={s.sectionHeader}>
+              <View style={[s.liveDot, { backgroundColor: colors.accent }]} />
+              <Text style={[s.sectionLabel, { color: colors.textSecondary }]}>
+                Now Focused
+              </Text>
+            </View>
             <View
               style={[
                 s.pinnedCard,
                 {
-                  backgroundColor: colors.surface,
-                  borderColor: colors.accent,
+                  backgroundColor: colors.accentMuted,
+                  borderColor: colors.accent + "33",
                 },
               ]}
             >
-              <View style={s.pinnedRow}>
-                <View
-                  style={[s.pinnedDot, { backgroundColor: pinnedDotColor }]}
-                />
+              <View
+                style={[s.pinnedAccentBar, { backgroundColor: colors.accent }]}
+              />
+              <View style={s.pinnedBody}>
+                <View style={s.pinnedTopRow}>
+                  <View
+                    style={[s.pinnedDot, { backgroundColor: pinnedDotColor }]}
+                  />
+                  <Text style={[s.pinnedKicker, { color: colors.accent }]}>
+                    ACTIVE
+                  </Text>
+                </View>
                 <Text
                   style={[s.pinnedName, { color: colors.textPrimary }]}
-                  numberOfLines={1}
+                  numberOfLines={2}
                 >
                   {currentTask.name}
                 </Text>
               </View>
-              <View style={s.pinnedMeta}>
-                <View
-                  style={[
-                    s.activeBadge,
-                    { backgroundColor: colors.accentMuted },
-                  ]}
-                >
-                  <Text style={[s.activeBadgeText, { color: colors.accent }]}>
-                    Active
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={[s.focusBtn, { backgroundColor: colors.accent }]}
-                  onPress={() => router.push("/focus")}
-                >
-                  <Ionicons name="play" size={12} color="#fff" />
-                  <Text style={s.focusBtnText}>Go to focus</Text>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity
+                style={[s.pinnedCta, { backgroundColor: colors.accent }]}
+                onPress={() => router.push("/focus")}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="play" size={16} color="#fff" />
+              </TouchableOpacity>
             </View>
           </View>
         )}
@@ -248,9 +330,14 @@ export default function Plan() {
         {remainingCount > 0 && (
           <View style={s.section}>
             {currentTask && !currentTask.completed && (
-              <Text style={[s.sectionLabel, { color: colors.textSecondary }]}>
-                Up Next
-              </Text>
+              <View style={s.sectionHeader}>
+                <Text style={[s.sectionLabel, { color: colors.textSecondary }]}>
+                  Up Next
+                </Text>
+                <Text style={[s.sectionCount, { color: colors.textSecondary }]}>
+                  {remainingCount}
+                </Text>
+              </View>
             )}
             {GROUPS.map(({ label, tag }) => (
               <TaskGroup
@@ -279,58 +366,103 @@ export default function Plan() {
         )}
 
         {/* Empty state */}
-        {activeTasks.length === 0 && (
+        {activeTasks.length === 0 && completedTasks.length === 0 && (
           <View style={s.emptyWrap}>
-            <Ionicons name="calendar-outline" size={40} color={colors.border} />
-            <Text style={[s.emptyText, { color: colors.textSecondary }]}>
-              No tasks for today
+            <View
+              style={[
+                s.emptyIconWrap,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Ionicons
+                name="sparkles-outline"
+                size={28}
+                color={colors.textSecondary}
+              />
+            </View>
+            <Text style={[s.emptyText, { color: colors.textPrimary }]}>
+              Your day is a blank canvas
             </Text>
             <Text style={[s.emptyHint, { color: colors.textSecondary }]}>
-              Tap the button below to add your first task
+              Add a task to start planning a focused day
             </Text>
           </View>
         )}
 
-        {/* Completed tasks */}
+        {/* Completed tasks (collapsible) */}
         {completedTasks.length > 0 && (
-          <View style={[s.section, { marginTop: 8 }]}>
-            <Text style={[s.sectionLabel, { color: colors.textSecondary }]}>
-              Completed · {completedTasks.length}
-            </Text>
-            {completedTasks.map((task) => (
+          <View style={[s.section, { marginTop: 4 }]}>
+            <TouchableOpacity
+              style={s.sectionHeader}
+              onPress={() => setCompletedExpanded((v) => !v)}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name="checkmark-circle"
+                size={14}
+                color={colors.textSecondary}
+              />
+              <Text style={[s.sectionLabel, { color: colors.textSecondary }]}>
+                Completed
+              </Text>
+              <Text style={[s.sectionCount, { color: colors.textSecondary }]}>
+                {completedTasks.length}
+              </Text>
+              <Ionicons
+                name={completedExpanded ? "chevron-up" : "chevron-down"}
+                size={14}
+                color={colors.textSecondary}
+              />
+            </TouchableOpacity>
+            {completedExpanded && (
               <View
-                key={task.id}
                 style={[
-                  s.completedCard,
+                  s.completedList,
                   {
                     backgroundColor: colors.surface,
                     borderColor: colors.border,
                   },
                 ]}
               >
-                <Ionicons
-                  name="checkmark-circle"
-                  size={18}
-                  color={colors.accent}
-                />
-                <Text
-                  style={[s.completedName, { color: colors.textSecondary }]}
-                  numberOfLines={1}
-                >
-                  {task.name}
-                </Text>
-                <TouchableOpacity
-                  onPress={() => deleteTask(task.id)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Ionicons
-                    name="close"
-                    size={16}
-                    color={colors.textSecondary}
-                  />
-                </TouchableOpacity>
+                {completedTasks.map((task, idx) => (
+                  <View
+                    key={task.id}
+                    style={[
+                      s.completedRow,
+                      idx !== completedTasks.length - 1 && {
+                        borderBottomColor: colors.border,
+                        borderBottomWidth: StyleSheet.hairlineWidth,
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={16}
+                      color={colors.accent}
+                    />
+                    <Text
+                      style={[s.completedName, { color: colors.textSecondary }]}
+                      numberOfLines={1}
+                    >
+                      {task.name}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => deleteTask(task.id)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Ionicons
+                        name="close"
+                        size={14}
+                        color={colors.textSecondary}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                ))}
               </View>
-            ))}
+            )}
           </View>
         )}
       </ScrollView>
@@ -339,13 +471,29 @@ export default function Plan() {
       <TouchableOpacity
         style={[
           s.fab,
-          { backgroundColor: colors.accent, shadowColor: colors.accent },
+          {
+            backgroundColor: isSessionActive
+              ? colors.surfaceMuted
+              : colors.accent,
+            shadowColor: isSessionActive ? "transparent" : colors.accent,
+          },
         ]}
-        onPress={() => setAddModalVisible(true)}
-        activeOpacity={0.88}
+        onPress={() => !isSessionActive && setAddModalVisible(true)}
+        activeOpacity={isSessionActive ? 1 : 0.88}
       >
-        <Ionicons name="add" size={20} color="#fff" />
-        <Text style={s.fabText}>Add Task</Text>
+        <Ionicons
+          name="add"
+          size={20}
+          color={isSessionActive ? colors.textSecondary : "#fff"}
+        />
+        <Text
+          style={[
+            s.fabText,
+            { color: isSessionActive ? colors.textSecondary : "#fff" },
+          ]}
+        >
+          {isSessionActive ? "Session in progress" : "Add Task"}
+        </Text>
       </TouchableOpacity>
 
       <AddTaskModal
@@ -372,97 +520,178 @@ export default function Plan() {
 
 const s = StyleSheet.create({
   screen: { flex: 1 },
-  scrollContent: { paddingBottom: 180 },
-  header: { paddingHorizontal: 24, paddingTop: 56, paddingBottom: 16 },
-  title: { fontSize: 24, fontFamily: "SoraBold", letterSpacing: -0.3 },
-  subtitle: { fontSize: 14, fontFamily: "Sora", marginTop: 4 },
+  scrollContent: { paddingBottom: 200 },
+  // Header
+  header: { paddingHorizontal: 24, paddingTop: 60, paddingBottom: 20 },
+  dateLabel: {
+    fontSize: 12,
+    fontFamily: "SoraSemiBold",
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+    opacity: 0.7,
+  },
+  title: {
+    fontSize: 32,
+    fontFamily: "SoraBold",
+    letterSpacing: -0.6,
+    marginTop: 4,
+  },
+  subtitle: { fontSize: 14, fontFamily: "Sora", marginTop: 8 },
+  // Summary strip
+  summaryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 16,
+  },
+  statChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  statDot: { width: 6, height: 6, borderRadius: 3 },
+  statValue: { fontSize: 13, fontFamily: "SoraBold" },
+  statLabel: { fontSize: 12, fontFamily: "Sora" },
+  progressWrap: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginLeft: 4,
+  },
+  progressTrack: {
+    flex: 1,
+    height: 4,
+    borderRadius: 2,
+    overflow: "hidden",
+  },
+  progressFill: { height: "100%", borderRadius: 2 },
+  progressText: {
+    fontSize: 11,
+    fontFamily: "SoraSemiBold",
+    minWidth: 32,
+    textAlign: "right",
+  },
+  // Sections
   section: { paddingHorizontal: 20, marginBottom: 8 },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 12,
+    paddingHorizontal: 2,
+  },
   sectionLabel: {
+    flex: 1,
     fontSize: 11,
     fontFamily: "SoraSemiBold",
     textTransform: "uppercase",
     letterSpacing: 0.8,
-    marginBottom: 10,
   },
+  sectionCount: {
+    fontSize: 11,
+    fontFamily: "SoraSemiBold",
+    opacity: 0.65,
+  },
+  liveDot: { width: 6, height: 6, borderRadius: 3 },
   // Pinned card
   pinnedCard: {
+    flexDirection: "row",
+    alignItems: "stretch",
     borderRadius: 18,
-    borderWidth: 1.5,
-    padding: 16,
-    marginBottom: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    marginBottom: 22,
+    gap: 12,
   },
-  pinnedRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  pinnedDot: { width: 8, height: 8, borderRadius: 4 },
-  pinnedName: { flex: 1, fontSize: 16, fontFamily: "SoraSemiBold" },
-  pinnedMeta: {
-    flexDirection: "row",
+  pinnedAccentBar: {
+    width: 3,
+    borderRadius: 2,
+  },
+  pinnedBody: { flex: 1, justifyContent: "center", gap: 6 },
+  pinnedTopRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  pinnedDot: { width: 6, height: 6, borderRadius: 3 },
+  pinnedKicker: {
+    fontSize: 10,
+    fontFamily: "SoraBold",
+    letterSpacing: 1.2,
+  },
+  pinnedName: { fontSize: 17, fontFamily: "SoraSemiBold", lineHeight: 22 },
+  pinnedCta: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
-    gap: 8,
-    marginTop: 12,
+    justifyContent: "center",
+    alignSelf: "center",
   },
-  activeBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
-  activeBadgeText: { fontSize: 11, fontFamily: "SoraSemiBold" },
-  focusBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  focusBtnText: { fontSize: 12, fontFamily: "SoraBold", color: "#fff" },
   // Empty
   emptyWrap: {
     alignItems: "center",
-    paddingVertical: 48,
+    paddingVertical: 64,
     paddingHorizontal: 32,
   },
+  emptyIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 18,
+  },
   emptyText: {
-    fontSize: 15,
+    fontSize: 17,
     fontFamily: "SoraSemiBold",
     textAlign: "center",
-    marginTop: 12,
+    letterSpacing: -0.2,
   },
   emptyHint: {
     fontSize: 13,
     fontFamily: "Sora",
     textAlign: "center",
     marginTop: 6,
-    opacity: 0.7,
+    opacity: 0.8,
   },
   // Completed
-  completedCard: {
+  completedList: {
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: "hidden",
+  },
+  completedRow: {
     flexDirection: "row",
     alignItems: "center",
-    borderRadius: 14,
-    borderWidth: 1,
+    gap: 12,
     paddingVertical: 12,
     paddingHorizontal: 14,
-    marginBottom: 8,
-    opacity: 0.65,
-    gap: 10,
   },
   completedName: {
     flex: 1,
     fontSize: 14,
-    fontFamily: "SoraSemiBold",
+    fontFamily: "Sora",
     textDecorationLine: "line-through",
   },
   // FAB
   fab: {
     position: "absolute",
     bottom: 110,
-    left: 24,
-    right: 24,
+    left: 32,
+    right: 32,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 28,
-    paddingVertical: 16,
+    paddingVertical: 15,
     gap: 8,
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
+    shadowOpacity: 0.32,
+    shadowRadius: 14,
     elevation: 8,
   },
   fabText: { fontSize: 15, fontFamily: "SoraBold", color: "#fff" },

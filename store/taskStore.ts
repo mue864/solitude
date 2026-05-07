@@ -1,3 +1,8 @@
+import {
+  pushCreateTask,
+  pushDeleteTask,
+  pushUpdateTask,
+} from "@/services/syncService";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
@@ -9,6 +14,9 @@ export interface Task {
   name: string;
   tag: TaskTag;
   completed: boolean;
+  onTime?: boolean; // true = completed within its session target, false = overtime, undefined = no target
+  /** Backend UUID — set after the task is synced to the cloud. */
+  remoteId?: string;
 }
 
 export interface TaskState {
@@ -32,19 +40,45 @@ export const useTaskStore = create<TaskState>()(
     (set, get) => ({
       tasks: [],
       currentTaskId: null,
-      addTask: (task) => set((state) => ({ tasks: [...state.tasks, task] })),
-      updateTask: (task) =>
+      addTask: (task) => {
+        set((state) => ({ tasks: [...state.tasks, task] }));
+        // Push to cloud in background; store remoteId when we get it back
+        pushCreateTask(task.name, task.tag).then((remoteId) => {
+          if (remoteId) {
+            set((state) => ({
+              tasks: state.tasks.map((t) =>
+                t.id === task.id ? { ...t, remoteId } : t,
+              ),
+            }));
+          }
+        });
+      },
+      updateTask: (task) => {
         set((state) => ({
           tasks: state.tasks.map((t) =>
-            t.id === task.id ? { ...t, ...task } : t
+            t.id === task.id ? { ...t, ...task } : t,
           ),
-        })),
-      deleteTask: (id) =>
+        }));
+        // Push update to cloud if this task has been synced
+        const remoteId = task.remoteId;
+        if (remoteId) {
+          pushUpdateTask(remoteId, {
+            name: task.name,
+            tag: task.tag,
+            completed: task.completed,
+            onTime: task.onTime,
+          });
+        }
+      },
+      deleteTask: (id) => {
+        const remoteId = get().tasks.find((t) => t.id === id)?.remoteId;
         set((state) => ({
           tasks: state.tasks.filter((t) => t.id !== id),
           currentTaskId:
             state.currentTaskId === id ? null : state.currentTaskId,
-        })),
+        }));
+        if (remoteId) pushDeleteTask(remoteId);
+      },
       setCurrentTask: (id) => set({ currentTaskId: id }),
       clearCurrentTask: () => set({ currentTaskId: null }),
       completeCurrentTask: () =>
@@ -52,8 +86,9 @@ export const useTaskStore = create<TaskState>()(
           if (!state.currentTaskId) return {};
           return {
             tasks: state.tasks.map((t) =>
-              t.id === state.currentTaskId ? { ...t, completed: true } : t
+              t.id === state.currentTaskId ? { ...t, completed: true } : t,
             ),
+            currentTaskId: null,
           };
         }),
       getCurrentTask: () => {
@@ -88,6 +123,6 @@ export const useTaskStore = create<TaskState>()(
           await AsyncStorage.removeItem(key);
         },
       },
-    }
-  )
+    },
+  ),
 );

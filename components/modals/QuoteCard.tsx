@@ -32,7 +32,7 @@ const QuoteCard = ({ onClose }: QuoteModalProps) => {
       translateY.value = withTiming(80, { duration: 280 }, (finished) => {
         if (finished) runOnJS(onClose)();
       });
-    }, 3500);
+    }, 5000);
     return () => clearTimeout(t);
   }, []);
 

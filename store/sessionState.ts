@@ -1,3 +1,4 @@
+import { pushSession } from "@/services/syncService";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AppState } from "react-native";
 import { create } from "zustand";
@@ -87,6 +88,13 @@ export interface SessionState {
   // checking if it's a new session
   isNewSession: boolean;
 
+  // Session task list (IDs from taskStore staged for this session)
+  sessionTasks: string[];
+  // Per-task time targets (seconds; 0 or missing = no target)
+  sessionTaskTargets: Record<string, number>;
+  // Initial duration when session was started (for elapsed-time calculation)
+  sessionInitialDuration: number;
+
   // Actions
   setSessionType: (type: SessionType) => void;
   setDuration: (duration: number | ((prev: number) => number)) => void;
@@ -99,6 +107,10 @@ export interface SessionState {
   startFlow: (flowId: string) => void;
   nextSession: () => void;
   checkAndResetStreak: () => void;
+  addSessionTask: (taskId: string) => void;
+  removeSessionTask: (taskId: string) => void;
+  completeSessionTask: (taskId: string) => void;
+  setSessionTaskTarget: (taskId: string, seconds: number) => void;
 
   // Flow completion actions
   continueFlow: () => void;
@@ -197,9 +209,31 @@ export const useSessionStore = create<SessionState>()(
         longestStreak: 0,
         lastSessionDate: null,
         isNewSession: true,
+        sessionTasks: [],
+        sessionTaskTargets: {},
+        sessionInitialDuration: SESSION_TYPES["Classic"],
 
         // Actions
         setSessionType: (type) => {
+          // Record a cancelled session if one was in progress
+          const state = get();
+          if ((state.isRunning || state.isPaused) && initialDurationRef) {
+            try {
+              const workedSeconds = Math.max(
+                0,
+                initialDurationRef - state.duration,
+              );
+              useSessionIntelligence.getState().recordSession({
+                sessionType: state.sessionType,
+                duration: workedSeconds,
+                completed: false,
+                flowId: state.currentFlowId,
+              });
+            } catch {
+              // silent — intelligence store failure must not block the type switch
+            }
+          }
+
           cleanup();
           const newDuration = SESSION_TYPES[type] || SESSION_TYPES["Classic"];
           set({
@@ -209,6 +243,7 @@ export const useSessionStore = create<SessionState>()(
             isPaused: false,
             currentFlowId: null,
             currentFlowStep: 0,
+            sessionTaskTargets: {},
           });
           startTimeRef = null;
           pausedTimeRef = 0;
@@ -245,7 +280,12 @@ export const useSessionStore = create<SessionState>()(
 
           cleanup();
           intervalRef = setInterval(updateTimer, 1000);
-          set({ isRunning: true, isPaused: false });
+          const isFreshStart = !state.isRunning && !state.isPaused;
+          set({
+            isRunning: true,
+            isPaused: false,
+            ...(isFreshStart ? { sessionInitialDuration: state.duration } : {}),
+          });
         },
 
         pauseSession: () => {
@@ -256,19 +296,40 @@ export const useSessionStore = create<SessionState>()(
         },
 
         reset: () => {
+          // Record a cancelled session if one was actually in progress
+          const state = get();
+          if ((state.isRunning || state.isPaused) && initialDurationRef) {
+            try {
+              const workedSeconds = Math.max(
+                0,
+                initialDurationRef - state.duration,
+              );
+              useSessionIntelligence.getState().recordSession({
+                sessionType: state.sessionType,
+                duration: workedSeconds,
+                completed: false,
+                flowId: state.currentFlowId,
+              });
+            } catch {
+              // silent — intelligence store failure must not block the reset
+            }
+          }
+
           cleanup();
           startTimeRef = null;
           pausedTimeRef = 0;
           backgroundTimeRef = null;
           initialDurationRef = null;
           lastPauseTimeRef = null;
-          set((state) => ({
+          set(() => ({
             isRunning: false,
             isPaused: false,
             currentFlowId: null,
             currentFlowStep: 0,
             sessionType: "Classic",
             duration: SESSION_TYPES["Classic"],
+            sessionTasks: [],
+            sessionTaskTargets: {},
           }));
         },
 
@@ -368,7 +429,20 @@ export const useSessionStore = create<SessionState>()(
         },
 
         // Mark the current session as completed
-        completeSession: () =>
+        completeSession: () => {
+          // Fire-and-forget cloud sync
+          const s = get();
+          const durationSeconds = initialDurationRef
+            ? Math.max(1, initialDurationRef - s.duration)
+            : Math.max(1, s.duration);
+          pushSession({
+            sessionType: s.sessionType,
+            durationSeconds,
+            flowId: s.currentFlowId,
+            flowStep: s.currentFlowStep,
+            completed: true,
+          });
+
           set((state) => {
             // Record session in session intelligence
             try {
@@ -462,6 +536,8 @@ export const useSessionStore = create<SessionState>()(
                   completedSessions: state.completedSessions + 1,
                   sessionId: Date.now().toString(),
                   showFlowCompletionModal: true,
+                  sessionTasks: [],
+                  sessionTaskTargets: {},
                   flowCompletionData: {
                     completedSessions: nextStep,
                     totalSessions: flow.steps.length,
@@ -509,6 +585,8 @@ export const useSessionStore = create<SessionState>()(
                   completedSessions: state.completedSessions + 1,
                   sessionId: Date.now().toString(),
                   showFlowCompletionModal: true,
+                  sessionTasks: [],
+                  sessionTaskTargets: {},
                   flowCompletionData: {
                     completedSessions: flow ? flow.steps.length : 0,
                     totalSessions: flow ? flow.steps.length : 0,
@@ -543,6 +621,8 @@ export const useSessionStore = create<SessionState>()(
               lastSessionDate: today,
               completedSessions: state.completedSessions + 1,
               sessionId: Date.now().toString(),
+              sessionTasks: [],
+              sessionTaskTargets: {},
             };
 
             // Only update streak if needed
@@ -552,10 +632,24 @@ export const useSessionStore = create<SessionState>()(
             }
 
             return update;
-          }),
+          });
+        },
 
         // Mark the current session as missed
-        missSession: () =>
+        missSession: () => {
+          // Fire-and-forget cloud sync
+          const s = get();
+          const durationSeconds = initialDurationRef
+            ? Math.max(0, initialDurationRef - s.duration)
+            : 0;
+          pushSession({
+            sessionType: s.sessionType,
+            durationSeconds,
+            flowId: s.currentFlowId,
+            flowStep: s.currentFlowStep,
+            completed: false,
+          });
+
           set((state) => {
             // Record failed session in session intelligence
             try {
@@ -593,7 +687,8 @@ export const useSessionStore = create<SessionState>()(
               ...state,
               ...update,
             };
-          }),
+          });
+        },
 
         // Reset all progress and statistics
         resetProgress: () =>
@@ -732,6 +827,42 @@ export const useSessionStore = create<SessionState>()(
             showFlowCompletionModal: false,
             flowCompletionData: null,
           })),
+
+        addSessionTask: (taskId) =>
+          set((state) => {
+            if (state.sessionTasks.includes(taskId)) return state;
+            if (state.sessionTasks.length >= 5) return state;
+            return { sessionTasks: [...state.sessionTasks, taskId] };
+          }),
+
+        removeSessionTask: (taskId) =>
+          set((state) => {
+            const targets = { ...state.sessionTaskTargets };
+            delete targets[taskId];
+            return {
+              sessionTasks: state.sessionTasks.filter((id) => id !== taskId),
+              sessionTaskTargets: targets,
+            };
+          }),
+
+        completeSessionTask: (_taskId) =>
+          // Task stays in sessionTasks so the frozen badge remains visible.
+          // Completion is tracked via taskStore.completed; sessionTasks cleared on session end.
+          set((state) => state),
+
+        setSessionTaskTarget: (taskId, seconds) =>
+          set((state) => {
+            if (seconds <= 0) {
+              const { [taskId]: _removed, ...rest } = state.sessionTaskTargets;
+              return { sessionTaskTargets: rest };
+            }
+            return {
+              sessionTaskTargets: {
+                ...state.sessionTaskTargets,
+                [taskId]: seconds,
+              },
+            };
+          }),
       };
     },
     {
@@ -747,6 +878,36 @@ export const useSessionStore = create<SessionState>()(
         removeItem: async (name) => {
           await AsyncStorage.removeItem(name);
         },
+      },
+      // On rehydration, if a session was in progress when the app was killed,
+      // record it as a failed attempt and reset — the timer closure vars are
+      // gone and cannot be reconstructed, so "resuming" is impossible.
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        if (state.isRunning || state.isPaused) {
+          try {
+            const originalDuration =
+              SESSION_TYPES[state.sessionType] ?? SESSION_TYPES["Classic"];
+            const workedSeconds = Math.max(
+              0,
+              originalDuration - state.duration,
+            );
+            useSessionIntelligence.getState().recordSession({
+              sessionType: state.sessionType,
+              duration: workedSeconds,
+              completed: false,
+              flowId: state.currentFlowId,
+            });
+          } catch {
+            // never block rehydration
+          }
+          state.isRunning = false;
+          state.isPaused = false;
+          state.duration =
+            SESSION_TYPES[state.sessionType] ?? SESSION_TYPES["Classic"];
+          state.currentFlowId = null;
+          state.currentFlowStep = 0;
+        }
       },
     },
   ),

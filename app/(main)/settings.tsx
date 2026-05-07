@@ -1,10 +1,12 @@
 import BottomSheet from "@/components/BottomSheet";
 import { useTheme } from "@/context/ThemeContext";
+import { useAuthStore } from "@/store/authStore";
 import { useSettingsStore } from "@/store/settingsStore";
 import { Ionicons } from "@expo/vector-icons";
-import React, { useState } from "react";
+import { router } from "expo-router";
+import React, { useEffect, useState } from "react";
 import {
-  Alert,
+  LayoutAnimation,
   ScrollView,
   StyleSheet,
   Switch,
@@ -12,6 +14,13 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Animated, {
+  Easing,
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 
 const SESSION_DURATIONS = [15, 25, 30, 45, 60];
 const BREAK_DURATIONS = [5, 10, 15, 20];
@@ -39,6 +48,7 @@ export default function Settings() {
   const vibrationEnabled = useSettingsStore((s) => s.vibrationEnabled);
   const isPro = useSettingsStore((s) => s.isPro);
   const upgradeToPro = useSettingsStore((s) => s.upgradeToPro);
+  const setProFromServer = useSettingsStore((s) => s.setProFromServer);
   const updateSessionDuration = useSettingsStore(
     (s) => s.updateSessionDuration,
   );
@@ -50,20 +60,41 @@ export default function Settings() {
   const toggleVibration = useSettingsStore((s) => s.toggleVibration);
   const resetToDefaults = useSettingsStore((s) => s.resetToDefaults);
 
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
+  const authUser = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
+
   const [proSheet, setProSheet] = useState(false);
+  const [signOutSheet, setSignOutSheet] = useState(false);
+  const [resetSheet, setResetSheet] = useState(false);
   const [openSection, setOpenSection] = useState<
     "sessions" | "notifications" | "appearance" | null
   >("sessions");
 
   const toggleSection = (
     section: "sessions" | "notifications" | "appearance",
-  ) => setOpenSection((prev) => (prev === section ? null : section));
+  ) => {
+    LayoutAnimation.configureNext({
+      duration: 220,
+      create: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+        property: LayoutAnimation.Properties.opacity,
+      },
+      update: { type: LayoutAnimation.Types.easeInEaseOut },
+      delete: {
+        type: LayoutAnimation.Types.easeInEaseOut,
+        property: LayoutAnimation.Properties.opacity,
+      },
+    });
+    setOpenSection((prev) => (prev === section ? null : section));
+  };
 
   const handleReset = () => {
-    Alert.alert("Reset Settings", "Restore all settings to defaults?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Reset", style: "destructive", onPress: resetToDefaults },
-    ]);
+    setResetSheet(true);
+  };
+
+  const handleSignOut = () => {
+    setSignOutSheet(true);
   };
 
   return (
@@ -313,6 +344,84 @@ export default function Settings() {
           />
         </Section>
 
+        {/* ── Account ── */}
+        <View
+          style={[
+            s.section,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+        >
+          <View style={[s.sectionHeader, { paddingVertical: 14 }]}>
+            <View
+              style={[
+                s.sectionIconWrap,
+                { backgroundColor: colors.surfaceMuted },
+              ]}
+            >
+              <Ionicons name="person-outline" size={16} color={colors.accent} />
+            </View>
+            <Text style={[s.sectionLabel, { color: colors.textPrimary }]}>
+              Account
+            </Text>
+          </View>
+
+          <View style={[s.sectionBody, { paddingBottom: 4 }]}>
+            {isLoggedIn && authUser ? (
+              <>
+                <View style={s.row}>
+                  <Text style={[s.rowLabel, { color: colors.textPrimary }]}>
+                    {authUser.firstName} {authUser.lastName}
+                  </Text>
+                </View>
+                <Text
+                  style={[
+                    s.rowLabel,
+                    {
+                      color: colors.textSecondary,
+                      fontSize: 13,
+                      marginBottom: 12,
+                    },
+                  ]}
+                >
+                  {authUser.email}
+                </Text>
+                <View style={[s.divider, { backgroundColor: colors.border }]} />
+                <TouchableOpacity
+                  style={[s.row, { paddingVertical: 14 }]}
+                  onPress={handleSignOut}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name="log-out-outline"
+                    size={16}
+                    color="#ef4444"
+                    style={{ marginRight: 8 }}
+                  />
+                  <Text style={[s.rowLabel, { color: "#ef4444" }]}>
+                    Sign Out
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity
+                style={[s.row, { paddingVertical: 14 }]}
+                onPress={() => router.push("/(screens)/signInPrompt" as any)}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name="log-in-outline"
+                  size={16}
+                  color={colors.accent}
+                  style={{ marginRight: 8 }}
+                />
+                <Text style={[s.rowLabel, { color: colors.accent }]}>
+                  Sign In / Create Account
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
         {/* Footer actions */}
         <View style={s.footer}>
           <TouchableOpacity
@@ -356,6 +465,71 @@ export default function Settings() {
           Solitude v1.0.0
         </Text>
       </ScrollView>
+
+      {/* Reset settings confirmation sheet */}
+      <BottomSheet
+        isVisible={resetSheet}
+        onClose={() => setResetSheet(false)}
+        title="Reset Settings"
+      >
+        <Text style={[s.proBody, { color: colors.textSecondary }]}>
+          All settings will be restored to their defaults. This cannot be
+          undone.
+        </Text>
+        <TouchableOpacity
+          style={[s.upgradeBtn, { backgroundColor: colors.destructive }]}
+          onPress={() => {
+            setResetSheet(false);
+            resetToDefaults();
+          }}
+        >
+          <Text style={s.upgradeBtnText}>Reset</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            s.upgradeBtn,
+            { backgroundColor: colors.surface, marginTop: 8 },
+          ]}
+          onPress={() => setResetSheet(false)}
+        >
+          <Text style={[s.upgradeBtnText, { color: colors.textPrimary }]}>
+            Cancel
+          </Text>
+        </TouchableOpacity>
+      </BottomSheet>
+
+      {/* Sign out confirmation sheet */}
+      <BottomSheet
+        isVisible={signOutSheet}
+        onClose={() => setSignOutSheet(false)}
+        title="Sign Out"
+      >
+        <Text style={[s.proBody, { color: colors.textSecondary }]}>
+          You'll be signed out of your account. Your local data stays on this
+          device, but Pro features will be restricted until you sign back in.
+        </Text>
+        <TouchableOpacity
+          style={[s.upgradeBtn, { backgroundColor: colors.destructive }]}
+          onPress={() => {
+            setSignOutSheet(false);
+            setProFromServer(false);
+            logout();
+          }}
+        >
+          <Text style={s.upgradeBtnText}>Sign Out</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            s.upgradeBtn,
+            { backgroundColor: colors.surface, marginTop: 8 },
+          ]}
+          onPress={() => setSignOutSheet(false)}
+        >
+          <Text style={[s.upgradeBtnText, { color: colors.textPrimary }]}>
+            Cancel
+          </Text>
+        </TouchableOpacity>
+      </BottomSheet>
 
       {/* Pro upgrade sheet */}
       <BottomSheet
@@ -417,6 +591,21 @@ function Section({
   colors: ReturnType<typeof useTheme>["colors"];
   children: React.ReactNode;
 }) {
+  const progress = useSharedValue(open ? 1 : 0);
+
+  useEffect(() => {
+    progress.value = withTiming(open ? 1 : 0, {
+      duration: 220,
+      easing: Easing.inOut(Easing.ease),
+    });
+  }, [open]);
+
+  const chevronStyle = useAnimatedStyle(() => ({
+    transform: [
+      { rotate: `${interpolate(progress.value, [0, 1], [0, 180])}deg` },
+    ],
+  }));
+
   return (
     <View
       style={[
@@ -437,11 +626,13 @@ function Section({
         <Text style={[s.sectionLabel, { color: colors.textPrimary }]}>
           {label}
         </Text>
-        <Ionicons
-          name={open ? "chevron-up" : "chevron-down"}
-          size={16}
-          color={colors.textSecondary}
-        />
+        <Animated.View style={chevronStyle}>
+          <Ionicons
+            name="chevron-down"
+            size={16}
+            color={colors.textSecondary}
+          />
+        </Animated.View>
       </TouchableOpacity>
       {open && <View style={s.sectionBody}>{children}</View>}
     </View>

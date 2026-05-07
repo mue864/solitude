@@ -101,6 +101,10 @@ interface SessionIntelligenceState {
   };
   // Data cleanup function
   cleanupSessionData: () => void;
+  // Rate the most recently recorded session (call after completeSession)
+  rateLastSession: (focusQuality: number) => void;
+  // Merge sessions pulled from the cloud (called after login on a new device)
+  mergeCloudSessions: (sessions: SessionRecord[]) => void;
 }
 
 const calculateProductivityScore = (
@@ -399,14 +403,14 @@ export const useSessionIntelligence = create<SessionIntelligenceState>()(
       getRecommendations: () => {
         const state = get();
         const { patterns } = state;
+        const triedTypes = Object.keys(patterns);
 
-        if (Object.keys(patterns).length === 0) {
+        if (triedTypes.length === 0) {
           return {
-            recommendedSession: "Classic",
-            reason:
-              "No session history available. Starting with a classic session.",
+            recommendedSession: "",
+            reason: "Complete your first session to get personalised insights.",
             successRate: 0,
-            expectedFocusQuality: 5,
+            expectedFocusQuality: 0,
           };
         }
 
@@ -415,25 +419,59 @@ export const useSessionIntelligence = create<SessionIntelligenceState>()(
           ([, a], [, b]) => b.successRate - a.successRate,
         )[0];
 
-        if (!bestSession) {
+        const [sessionType, pattern] = bestSession;
+
+        // If the user is succeeding well but has only tried one or two types,
+        // suggest a logical next challenge rather than the same thing again.
+        const CHALLENGE_MAP: Record<string, string> = {
+          Classic: "Deep Focus",
+          "Quick Task": "Classic",
+          "Deep Focus": "Creative Time",
+          "Creative Time": "Review Mode",
+          "Review Mode": "Deep Focus",
+          "Course Time": "Deep Focus",
+          "Mindful Moment": "Classic",
+        };
+
+        const suggestion = CHALLENGE_MAP[sessionType];
+        const shouldSuggestChallenge =
+          pattern.successRate >= 80 &&
+          suggestion &&
+          !triedTypes.includes(suggestion);
+
+        if (shouldSuggestChallenge) {
           return {
-            recommendedSession: "Classic",
-            reason: "Unable to determine best session type.",
-            successRate: 0,
-            expectedFocusQuality: 5,
+            recommendedSession: suggestion,
+            reason:
+              `You're nailing ${sessionType} sessions at ${pattern.successRate.toFixed(0)}% completion. ` +
+              `Ready for a new challenge?`,
+            successRate: pattern.successRate,
+            expectedFocusQuality: pattern.averageFocusQuality,
           };
         }
 
-        const [sessionType, pattern] = bestSession;
+        // Multiple types tried — recommend the best performing untried-or-best one
         const reason =
-          pattern.successRate > 80
-            ? `You have a ${pattern.successRate.toFixed(1)}% success rate with ${sessionType} sessions.`
-            : pattern.successRate > 60
-              ? `${sessionType} sessions work well for you (${pattern.successRate.toFixed(1)}% success rate).`
-              : `Try ${sessionType} sessions to improve your productivity.`;
+          pattern.successRate >= 80
+            ? `${sessionType} is your strongest session — keep the streak going.`
+            : pattern.successRate >= 60
+              ? `${sessionType} sessions are working well for you (${pattern.successRate.toFixed(0)}% completion).`
+              : `Start with shorter sessions to build momentum and confidence.`;
+
+        // Only surface a chip suggestion if it's a type not yet tried
+        const untried =
+          Object.values(
+            Object.fromEntries(
+              Object.entries(CHALLENGE_MAP).filter(
+                ([k]) =>
+                  triedTypes.includes(k) &&
+                  !triedTypes.includes(CHALLENGE_MAP[k]),
+              ),
+            ),
+          )[0] ?? "";
 
         return {
-          recommendedSession: sessionType,
+          recommendedSession: pattern.successRate >= 80 ? untried : sessionType,
           reason,
           successRate: pattern.successRate,
           expectedFocusQuality: pattern.averageFocusQuality,
@@ -678,6 +716,197 @@ export const useSessionIntelligence = create<SessionIntelligenceState>()(
 
       // Data cleanup function (no-op — kept for interface compat)
       cleanupSessionData: () => {},
+
+      mergeCloudSessions: (incomingSessions: SessionRecord[]) => {
+        set((state) => {
+          const existingIds = new Set(state.sessionRecords.map((r) => r.id));
+          const newOnes = incomingSessions.filter(
+            (s) => !existingIds.has(s.id),
+          );
+          if (newOnes.length === 0) return state;
+
+          const newRecords = [...state.sessionRecords, ...newOnes].sort(
+            (a, b) => a.timestamp - b.timestamp,
+          );
+
+          // Recompute patterns
+          const patterns: Record<string, SessionPattern> = {};
+          const sessionTypes = [
+            ...new Set(newRecords.map((r) => r.sessionType)),
+          ];
+          sessionTypes.forEach((type) => {
+            const typeRecords = newRecords.filter(
+              (r) => r.sessionType === type,
+            );
+            const completed = typeRecords.filter((r) => r.completed);
+            const ratedCompleted = completed.filter(
+              (r) => r.focusQuality !== undefined,
+            );
+            const ratedEnergy = completed.filter(
+              (r) => r.energyLevel !== undefined,
+            );
+            patterns[type] = {
+              totalSessions: typeRecords.length,
+              completedSessions: completed.length,
+              successRate: (completed.length / typeRecords.length) * 100,
+              averageFocusQuality:
+                ratedCompleted.length > 0
+                  ? ratedCompleted.reduce(
+                      (sum, r) => sum + r.focusQuality!,
+                      0,
+                    ) / ratedCompleted.length
+                  : 0,
+              averageEnergyLevel:
+                ratedEnergy.length > 0
+                  ? ratedEnergy.reduce((sum, r) => sum + r.energyLevel!, 0) /
+                    ratedEnergy.length
+                  : 0,
+              averageInterruptions:
+                completed.length > 0
+                  ? completed.reduce(
+                      (sum, r) => sum + (r.interruptions || 0),
+                      0,
+                    ) / completed.length
+                  : 0,
+              bestTimeSlots: getPeakProductivityHours(typeRecords).map(
+                (h) => `${h}:00`,
+              ),
+            };
+          });
+
+          const totalSessions = newRecords.length;
+          const completedSessions = newRecords.filter(
+            (r) => r.completed,
+          ).length;
+          const completionRate =
+            totalSessions > 0 ? (completedSessions / totalSessions) * 100 : 0;
+          const completedRecords = newRecords.filter((r) => r.completed);
+          const ratedFocusRecords = completedRecords.filter(
+            (r) => r.focusQuality !== undefined,
+          );
+          const ratedEnergyRecords = completedRecords.filter(
+            (r) => r.energyLevel !== undefined,
+          );
+          const averageFocusQuality =
+            ratedFocusRecords.length > 0
+              ? ratedFocusRecords.reduce((sum, r) => sum + r.focusQuality!, 0) /
+                ratedFocusRecords.length
+              : 0;
+          const averageEnergyLevel =
+            ratedEnergyRecords.length > 0
+              ? ratedEnergyRecords.reduce((sum, r) => sum + r.energyLevel!, 0) /
+                ratedEnergyRecords.length
+              : 0;
+          const mostSuccessfulSession =
+            Object.entries(patterns).sort(
+              ([, a], [, b]) => b.successRate - a.successRate,
+            )[0]?.[0] || "Classic";
+
+          let currentStreak = 0;
+          const today = getStartOfDay(Date.now());
+          const msPerDay = 24 * 60 * 60 * 1000;
+          for (let i = 0; i <= 365; i++) {
+            const dayStart = today - i * msPerDay;
+            const dayEnd = dayStart + msPerDay;
+            const hadSession = newRecords.some(
+              (r) =>
+                r.completed && r.timestamp >= dayStart && r.timestamp < dayEnd,
+            );
+            if (hadSession) {
+              currentStreak++;
+            } else if (i > 0) {
+              break;
+            }
+          }
+
+          return {
+            sessionRecords: newRecords,
+            patterns,
+            userStats: {
+              totalSessions,
+              completionRate,
+              mostSuccessfulSession,
+              productivityScore: calculateProductivityScore(
+                completionRate,
+                averageFocusQuality || 5,
+                averageEnergyLevel || 5,
+                currentStreak,
+              ),
+              focusTrend: analyzeFocusTrend(newRecords),
+              currentStreak,
+              averageFocusQuality,
+              averageEnergyLevel,
+            },
+          };
+        });
+      },
+
+      // Update the focusQuality on the most recently recorded session
+      rateLastSession: (focusQuality: number) => {
+        set((state) => {
+          if (state.sessionRecords.length === 0) return state;
+
+          const updatedRecords = [...state.sessionRecords];
+          const lastIdx = updatedRecords.length - 1;
+          updatedRecords[lastIdx] = {
+            ...updatedRecords[lastIdx],
+            focusQuality,
+          };
+
+          // Recalculate global averages
+          const completedRecords = updatedRecords.filter((r) => r.completed);
+          const ratedFocus = completedRecords.filter(
+            (r) => r.focusQuality !== undefined,
+          );
+          const averageFocusQuality =
+            ratedFocus.length > 0
+              ? ratedFocus.reduce((sum, r) => sum + r.focusQuality!, 0) /
+                ratedFocus.length
+              : 0;
+
+          // Recalculate the pattern for this session type
+          const sessionType = updatedRecords[lastIdx].sessionType;
+          const typeRecords = updatedRecords.filter(
+            (r) => r.sessionType === sessionType,
+          );
+          const completed = typeRecords.filter((r) => r.completed);
+          const ratedCompleted = completed.filter(
+            (r) => r.focusQuality !== undefined,
+          );
+          const updatedPattern = state.patterns[sessionType]
+            ? {
+                ...state.patterns[sessionType],
+                averageFocusQuality:
+                  ratedCompleted.length > 0
+                    ? ratedCompleted.reduce(
+                        (sum, r) => sum + r.focusQuality!,
+                        0,
+                      ) / ratedCompleted.length
+                    : 0,
+              }
+            : state.patterns[sessionType];
+
+          const newProductivityScore = calculateProductivityScore(
+            state.userStats.completionRate,
+            averageFocusQuality || 5,
+            state.userStats.averageEnergyLevel || 5,
+            state.userStats.currentStreak,
+          );
+
+          return {
+            sessionRecords: updatedRecords,
+            patterns: updatedPattern
+              ? { ...state.patterns, [sessionType]: updatedPattern }
+              : state.patterns,
+            userStats: {
+              ...state.userStats,
+              averageFocusQuality,
+              productivityScore: newProductivityScore,
+              focusTrend: analyzeFocusTrend(updatedRecords),
+            },
+          };
+        });
+      },
     }),
     {
       name: "session-intelligence-store",

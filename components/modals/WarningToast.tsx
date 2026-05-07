@@ -6,15 +6,20 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 interface WarningToastProps {
   text1: string;
   text2?: string;
+  icon?: string;
+  iconColor?: string;
   onPress?: () => void;
 }
 
 export default function WarningToast({
   text1,
   text2,
+  icon = "warning",
+  iconColor,
   onPress,
 }: WarningToastProps) {
   const { colors } = useTheme();
+  const resolvedIconColor = iconColor ?? colors.accent;
   return (
     <View
       style={[
@@ -24,9 +29,12 @@ export default function WarningToast({
     >
       <View style={styles.left}>
         <View
-          style={[styles.iconWrap, { backgroundColor: colors.accentMuted }]}
+          style={[
+            styles.iconWrap,
+            { backgroundColor: resolvedIconColor + "22" },
+          ]}
         >
-          <Ionicons name="warning" size={16} color={colors.accent} />
+          <Ionicons name={icon as any} size={16} color={resolvedIconColor} />
         </View>
         <View>
           <Text style={[styles.text, { color: colors.textPrimary }]}>

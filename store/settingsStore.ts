@@ -68,6 +68,7 @@ export interface SettingsState {
 
   // Pro actions
   upgradeToPro: () => void;
+  setProFromServer: (isPro: boolean) => void;
   addCustomDuration: (duration: number) => void;
   removeCustomDuration: (duration: number) => void;
   addNotificationSchedule: (schedule: ProNotificationSchedule) => void;
@@ -189,6 +190,10 @@ export const useSettingsStore = create<SettingsState>()(
       // Pro tier actions
       upgradeToPro: () => {
         set({ isPro: true });
+      },
+
+      setProFromServer: (isPro: boolean) => {
+        set({ isPro });
       },
 
       addCustomDuration: (duration: number) => {
@@ -430,7 +435,7 @@ export const useSettingsStore = create<SettingsState>()(
           return value ? JSON.parse(value) : null;
         },
         setItem: async (name: string, value: any) => {
-          await AsyncStorage.setItem(name, value);
+          await AsyncStorage.setItem(name, JSON.stringify(value));
         },
         removeItem: async (name: string) => {
           await AsyncStorage.removeItem(name);

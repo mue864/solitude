@@ -1,4 +1,5 @@
 import CustomTabBar from "@/components/CustomTabBar";
+import SessionMiniBar from "@/components/SessionMiniBar";
 import { useTheme } from "@/context/ThemeContext";
 import { Tabs } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -34,6 +35,7 @@ export default function Layout() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={isDarkMode ? "light" : "dark"} />
       <TabNavigator />
+      <SessionMiniBar />
     </View>
   );
 }

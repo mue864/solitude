@@ -157,16 +157,18 @@ class NotificationService {
     });
     this.eventListeners = [];
 
-    const foregroundUnsubscribe = notifee.onForegroundEvent(({ type, detail }) => {
-      switch (type) {
-        case EventType.PRESS:
-          this.handleNotificationPress(detail.notification);
-          break;
-        case EventType.ACTION_PRESS:
-          this.handleActionPress(detail.pressAction, detail.notification);
-          break;
-      }
-    });
+    const foregroundUnsubscribe = notifee.onForegroundEvent(
+      ({ type, detail }) => {
+        switch (type) {
+          case EventType.PRESS:
+            this.handleNotificationPress(detail.notification);
+            break;
+          case EventType.ACTION_PRESS:
+            this.handleActionPress(detail.pressAction, detail.notification);
+            break;
+        }
+      },
+    );
 
     this.eventListeners.push(foregroundUnsubscribe);
   }
@@ -184,8 +186,7 @@ class NotificationService {
 
     if (!this.sessionStore) return;
 
-    const { resumeSession, pauseSession, reset } =
-      this.sessionStore.getState();
+    const { resumeSession, pauseSession, reset } = this.sessionStore.getState();
 
     switch (actionId) {
       case "start-session":
@@ -259,14 +260,14 @@ class NotificationService {
       if (tasks) {
         const parsedTasks = JSON.parse(tasks);
         const updatedTasks = parsedTasks.state.tasks.map((task: any) =>
-          task.id === taskId ? { ...task, completed: true } : task
+          task.id === taskId ? { ...task, completed: true } : task,
         );
         await AsyncStorage.setItem(
           "task-store",
           JSON.stringify({
             ...parsedTasks,
             state: { ...parsedTasks.state, tasks: updatedTasks },
-          })
+          }),
         );
       }
     } catch (error) {
@@ -297,7 +298,8 @@ class NotificationService {
       else if (config.id.includes("streak")) channelId = "streak-notifications";
       else if (config.id.includes("break")) channelId = "break-reminders";
       else if (config.id.includes("flow")) channelId = "flow-notifications";
-      else if (config.id.includes("background")) channelId = "background-sessions";
+      else if (config.id.includes("background"))
+        channelId = "background-sessions";
 
       const androidConfig: any = {
         channelId,
@@ -380,7 +382,7 @@ class NotificationService {
             sound: config.sound || "default",
           },
         },
-        trigger
+        trigger,
       );
     } catch (error) {
       console.error("Failed to schedule notification:", error);
@@ -413,7 +415,7 @@ class NotificationService {
         startTime: Date.now(),
         endTime: Date.now() + duration * 60 * 1000,
         isRunning: true,
-      })
+      }),
     );
 
     await this.displayNotification({
@@ -486,7 +488,7 @@ class NotificationService {
       {
         type: TriggerType.TIMESTAMP,
         timestamp: Date.now() + sessionDuration * 60 * 1000,
-      }
+      },
     );
   }
 
@@ -529,14 +531,14 @@ class NotificationService {
       {
         type: TriggerType.TIMESTAMP,
         timestamp: reminderTime.getTime(),
-      }
+      },
     );
   }
 
   async showFlowProgressNotification(
     flowName: string,
     currentStep: number,
-    totalSteps: number
+    totalSteps: number,
   ) {
     await this.displayNotification({
       id: `flow-progress-${flowName}`,
@@ -569,8 +571,43 @@ class NotificationService {
       {
         type: TriggerType.TIMESTAMP,
         timestamp: Date.now() + duration * 60 * 1000,
-      }
+      },
     );
+  }
+
+  async showBackgroundSessionNotification(
+    sessionType: string,
+    remainingSeconds: number,
+  ) {
+    const mins = Math.floor(remainingSeconds / 60);
+    const secs = remainingSeconds % 60;
+    const timeStr = `${mins}:${secs.toString().padStart(2, "0")}`;
+
+    try {
+      await notifee.displayNotification({
+        id: "background-session",
+        title: `${sessionType} · In Progress`,
+        body: `${timeStr} remaining`,
+        android: {
+          channelId: "background-sessions",
+          smallIcon: "ic_launcher",
+          ongoing: true,
+          autoCancel: false,
+          asForegroundService: true,
+          pressAction: { id: "default" },
+          importance: AndroidImportance.LOW,
+        },
+      });
+    } catch (error) {
+      console.error("Failed to show background session notification:", error);
+    }
+  }
+
+  async cancelBackgroundSessionNotification() {
+    try {
+      await notifee.stopForegroundService();
+    } catch (_) {}
+    await this.cancelNotification("background-session");
   }
 }
 
@@ -610,18 +647,31 @@ export const useNotifications = () => {
     showFlowProgressNotification: (
       flowName: string,
       currentStep: number,
-      totalSteps: number
+      totalSteps: number,
     ) =>
       notificationService.showFlowProgressNotification(
         flowName,
         currentStep,
-        totalSteps
+        totalSteps,
       ),
     showFlowCompletionNotification: (flowName: string, totalTime: number) =>
       notificationService.showFlowCompletionNotification(flowName, totalTime),
     showSessionCompleteNotification: (sessionType: string, duration: number) =>
-      notificationService.showSessionCompleteNotification(sessionType, duration),
+      notificationService.showSessionCompleteNotification(
+        sessionType,
+        duration,
+      ),
     updateSessionState: (isRunning: boolean, isPaused: boolean) =>
       notificationService.updateSessionState(isRunning, isPaused),
+    showBackgroundSessionNotification: (
+      sessionType: string,
+      remainingSeconds: number,
+    ) =>
+      notificationService.showBackgroundSessionNotification(
+        sessionType,
+        remainingSeconds,
+      ),
+    cancelBackgroundSessionNotification: () =>
+      notificationService.cancelBackgroundSessionNotification(),
   };
 };

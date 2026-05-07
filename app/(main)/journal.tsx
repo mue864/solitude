@@ -172,6 +172,8 @@ function JournalCard({
   const preview = textBlock?.content?.trim().slice(0, 100) ?? "";
   const dateStr = item.date ? format(parseISO(item.date), "MMM d, yyyy") : "";
   const blockCount = item.blocks?.length ?? 0;
+  const moodEmojis = ["😩", "😕", "😐", "🙂", "🔥"];
+  const visibleTags = item.tags?.slice(0, 3) ?? [];
 
   return (
     <TouchableOpacity
@@ -186,12 +188,18 @@ function JournalCard({
       <View style={[s.cardAccent, { backgroundColor: colors.accent }]} />
 
       <View style={s.cardBody}>
-        <Text
-          style={[s.cardTitle, { color: colors.textPrimary }]}
-          numberOfLines={1}
-        >
-          {item.title || "Untitled"}
-        </Text>
+        {/* Title row with mood */}
+        <View style={s.cardTitleRow}>
+          <Text
+            style={[s.cardTitle, { color: colors.textPrimary }]}
+            numberOfLines={1}
+          >
+            {item.title || "Untitled"}
+          </Text>
+          {item.mood != null && (
+            <Text style={s.moodEmoji}>{moodEmojis[item.mood - 1]}</Text>
+          )}
+        </View>
         {!!preview && (
           <Text
             style={[s.cardPreview, { color: colors.textSecondary }]}
@@ -199,6 +207,21 @@ function JournalCard({
           >
             {preview}
           </Text>
+        )}
+        {/* Tags */}
+        {visibleTags.length > 0 && (
+          <View style={s.tagsRow}>
+            {visibleTags.map((tag) => (
+              <View
+                key={tag}
+                style={[s.tagChip, { backgroundColor: colors.accentMuted }]}
+              >
+                <Text style={[s.tagChipText, { color: colors.accent }]}>
+                  #{tag}
+                </Text>
+              </View>
+            ))}
+          </View>
         )}
         <View style={s.cardMeta}>
           <View style={s.metaChip}>
@@ -220,6 +243,19 @@ function JournalCard({
               />
               <Text style={[s.metaText, { color: colors.textSecondary }]}>
                 {item.time}
+              </Text>
+            </View>
+          )}
+          {item.sessionContext && (
+            <View style={s.metaChip}>
+              <Ionicons
+                name="timer-outline"
+                size={11}
+                color={colors.textSecondary}
+              />
+              <Text style={[s.metaText, { color: colors.textSecondary }]}>
+                {item.sessionContext.sessionType} ·{" "}
+                {Math.floor(item.sessionContext.durationSeconds / 60)}m
               </Text>
             </View>
           )}
@@ -292,13 +328,36 @@ const s = StyleSheet.create({
   },
   cardAccent: { width: 3, alignSelf: "stretch" },
   cardBody: { flex: 1, paddingVertical: 14, paddingLeft: 14, paddingRight: 10 },
-  cardTitle: { fontSize: 15, fontFamily: "SoraSemiBold", marginBottom: 4 },
+  cardTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 4,
+  },
+  cardTitle: { flex: 1, fontSize: 15, fontFamily: "SoraSemiBold" },
+  moodEmoji: { fontSize: 16 },
   cardPreview: {
     fontSize: 13,
     fontFamily: "Sora",
     lineHeight: 19,
-    marginBottom: 8,
+    marginBottom: 6,
   },
+  tagsRow: { flexDirection: "row", gap: 6, flexWrap: "wrap", marginBottom: 6 },
+  tagChip: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  tagChipText: { fontSize: 10, fontFamily: "SoraSemiBold" },
+  insightBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginBottom: 6,
+    alignSelf: "flex-start",
+    maxWidth: "100%",
+  },
+  insightBadgeText: { fontSize: 11, fontFamily: "SoraMedium", flex: 1 },
   cardMeta: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   metaChip: { flexDirection: "row", alignItems: "center", gap: 4 },
   metaText: { fontSize: 11, fontFamily: "Sora" },

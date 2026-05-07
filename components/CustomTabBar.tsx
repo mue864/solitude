@@ -84,7 +84,7 @@ const TabButton = React.memo(
         <TabIcon
           name={iconName}
           focused={isFocused}
-          color={isFocused ? colors.accent : colors.textSecondary}
+          fill={isFocused ? colors.accent : colors.textSecondary}
         />
         <Animated.View style={labelStyle}>
           <Text

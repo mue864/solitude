@@ -7,26 +7,29 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import React, {
-    useCallback,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
 } from "react";
 import {
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  AppState,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  Vibration,
+  View,
 } from "react-native";
 import Animated, {
-    useAnimatedStyle,
-    useSharedValue,
-    withDelay,
-    withSequence,
-    withSpring,
-    withTiming,
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withSequence,
+  withSpring,
+  withTiming,
 } from "react-native-reanimated";
 import Toast from "react-native-toast-message";
 
@@ -41,6 +44,7 @@ import QuickTaskModal from "@/components/modals/QuickTaskModal";
 import QuoteCard from "@/components/modals/QuoteCard";
 import SessionCompletionModal from "@/components/modals/SessionCompletionModal";
 import SessionIntelligenceModal from "@/components/modals/SessionIntelligenceModal";
+import SessionTaskPickerModal from "@/components/modals/SessionTaskPickerModal";
 import { useNotifications } from "@/hooks/useNotifications";
 
 // ---------------------------------------------------------------------------
@@ -68,6 +72,10 @@ const SESSION_CHIP_ORDER: SessionType[] = [
   "Short Break",
   "Mindful Moment",
 ];
+
+// Premium easing curves
+const EASE_OUT = Easing.bezier(0.22, 1, 0.36, 1);
+const EASE_IN = Easing.bezier(0.55, 0, 0.6, 0.2);
 
 function getSessionBg(type: SessionType, isDarkMode: boolean): string {
   const breakTypes: SessionType[] = [
@@ -109,6 +117,7 @@ export default function Focus() {
 
   // ── Modal visibility ──────────────────────────────────────────────────────
   const [isQuickTaskModalVisible, setIsQuickTaskModalVisible] = useState(false);
+  const [isTaskPickerVisible, setIsTaskPickerVisible] = useState(false);
   const [isSessionTypeModalVisible, setIsSessionTypeModalVisible] =
     useState(false);
   const [isFlowModalVisible, setIsFlowModalVisible] = useState(false);
@@ -118,6 +127,11 @@ export default function Focus() {
   const [showReflect, setShowReflect] = useState(false);
   const [showInsights, setShowInsights] = useState(false);
   const [showFlowDetails, setShowFlowDetails] = useState(false);
+  const [lastSessionContext, setLastSessionContext] = useState<{
+    sessionType: string;
+    durationSeconds: number;
+    tasksCompleted: number;
+  } | null>(null);
 
   // ── Session store ─────────────────────────────────────────────────────────
   const {
@@ -140,6 +154,12 @@ export default function Focus() {
   } = useSessionStore();
 
   const currentSessionId = useSessionStore((s) => s.sessionId);
+  const sessionTasks = useSessionStore((s) => s.sessionTasks);
+  const sessionTaskTargets = useSessionStore((s) => s.sessionTaskTargets);
+  const sessionInitialDuration = useSessionStore(
+    (s) => s.sessionInitialDuration,
+  );
+  const completeSessionTask = useSessionStore((s) => s.completeSessionTask);
   const durationMinutes = Math.floor(duration / 60);
 
   // ── Task store ────────────────────────────────────────────────────────────
@@ -148,6 +168,23 @@ export default function Focus() {
   const clearCurrentTask = useTaskStore((s) => s.clearCurrentTask);
   const completeCurrentTask = useTaskStore((s) => s.completeCurrentTask);
   const currentTask = tasks.find((t) => t.id === currentTaskId);
+
+  // Staged session tasks (resolved objects, filter out any deleted)
+  const PRIORITY_ORDER: Record<string, number> = {
+    urgent: 0,
+    important: 1,
+    deepwork: 2,
+    quickwin: 3,
+  };
+  const stagedTasks = sessionTasks
+    .map((id) => tasks.find((t) => t.id === id))
+    .filter(Boolean)
+    .sort(
+      (a, b) =>
+        (PRIORITY_ORDER[a!.tag ?? ""] ?? 4) -
+        (PRIORITY_ORDER[b!.tag ?? ""] ?? 4),
+    ) as typeof tasks;
+  const stagedCompletedCount = stagedTasks.filter((t) => t.completed).length;
 
   // ── Journal store ─────────────────────────────────────────────────────────
   const addJournalEntry = useJournalStore((s) => s.addEntry);
@@ -167,22 +204,64 @@ export default function Focus() {
 
   // ── Refs ──────────────────────────────────────────────────────────────────
   const lastSessionId = useRef<string | null>(null);
-  const lastFlowContext = useRef<{
-    flow: string | null;
-    step: number;
-    lastQuoteTime: number;
-  }>({ flow: null, step: -1, lastQuoteTime: 0 });
+  const quoteHalfwayShown = useRef(false);
   const prevSessionId = useRef(currentSessionId);
   const prevIsRunning = useRef(isRunning);
 
   // ── Animations ────────────────────────────────────────────────────────────
   const isActive = isRunning || isPaused;
 
+  // ── Per-task timers ───────────────────────────────────────────────────────
+  // duration counts DOWN, so elapsed = sessionInitialDuration - currentDuration
+  const sessionStartDurationRef = useRef<number>(
+    isActive ? sessionInitialDuration : 0,
+  );
+  const [taskCompletedAt, setTaskCompletedAt] = useState<
+    Record<string, number>
+  >({});
+  const prevIsActiveRef = useRef(isActive);
+  const warnedRef = useRef<Set<string>>(new Set());
+  const overdueRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (isActive && !prevIsActiveRef.current) {
+      // Fresh session start: capture initial duration and reset all task timer state
+      sessionStartDurationRef.current = sessionInitialDuration;
+      setTaskCompletedAt({});
+      warnedRef.current = new Set();
+      overdueRef.current = new Set();
+    }
+    prevIsActiveRef.current = isActive;
+  }, [isActive]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const sessionElapsed = isActive
+    ? Math.max(0, sessionStartDurationRef.current - duration)
+    : 0;
+
+  // Threshold vibrations: 60s warning + overtime pulse per task
+  useEffect(() => {
+    if (!isRunning) return;
+    stagedTasks.forEach((task) => {
+      const target = sessionTaskTargets[task.id];
+      if (!target || task.completed) return;
+      const remaining = target - sessionElapsed;
+      if (remaining <= 60 && remaining > 0 && !warnedRef.current.has(task.id)) {
+        warnedRef.current.add(task.id);
+        Vibration.vibrate(80);
+      }
+      if (remaining <= 0 && !overdueRef.current.has(task.id)) {
+        overdueRef.current.add(task.id);
+        Vibration.vibrate([0, 80, 80, 80]);
+      }
+    });
+  }, [sessionElapsed]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const idleOpacity = useSharedValue(isActive ? 0 : 1);
   const idleTranslateY = useSharedValue(isActive ? -14 : 0);
   const activeOpacity = useSharedValue(isActive ? 1 : 0);
   const timerScale = useSharedValue(isActive ? 1.08 : 1);
   const timerAreaOpacity = useSharedValue(1);
+  const timerAreaTranslateY = useSharedValue(0);
 
   useEffect(() => {
     const toActive = isRunning || isPaused;
@@ -207,12 +286,16 @@ export default function Focus() {
   useEffect(() => {
     if (prevSessionType.current === sessionType) return;
     prevSessionType.current = sessionType;
-    // pure fade: out then in
+    // Premium cross-fade: gentle ease-in out, then ease-out in with subtle lift
     timerAreaOpacity.value = withSequence(
-      withTiming(0, { duration: 110 }),
-      withTiming(1, { duration: 190 }),
+      withTiming(0, { duration: 220, easing: EASE_IN }),
+      withTiming(1, { duration: 340, easing: EASE_OUT }),
     );
-  }, [sessionType]);
+    timerAreaTranslateY.value = withSequence(
+      withTiming(-6, { duration: 220, easing: EASE_IN }),
+      withTiming(0, { duration: 340, easing: EASE_OUT }),
+    );
+  }, [sessionType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const idleStyle = useAnimatedStyle(() => ({
     opacity: idleOpacity.value,
@@ -233,44 +316,29 @@ export default function Focus() {
 
   const timerAreaStyle = useAnimatedStyle(() => ({
     opacity: timerAreaOpacity.value,
+    transform: [{ translateY: timerAreaTranslateY.value }],
   }));
 
   // ── Quote logic ───────────────────────────────────────────────────────────
+  // Trigger 1: show on every new session start
   useEffect(() => {
     if (!isRunning || !currentSessionId) return;
-    const now = Date.now();
-    const shouldShowQuote = () => {
-      if (now - lastFlowContext.current.lastQuoteTime < 5 * 60 * 1000)
-        return false;
-      return (
-        currentFlowId !== lastFlowContext.current.flow ||
-        now - lastFlowContext.current.lastQuoteTime > 12 * 60 * 60 * 1000 ||
-        (lastFlowContext.current.flow && !currentFlowId)
-      );
-    };
-    if (currentSessionId !== lastSessionId.current) {
-      lastSessionId.current = currentSessionId;
-      if (shouldShowQuote()) {
-        lastFlowContext.current = {
-          flow: currentFlowId,
-          step: currentFlowStep,
-          lastQuoteTime: now,
-        };
-        const t1 = setTimeout(() => {
-          setShowQuoteModal(true);
-          const t2 = setTimeout(() => setShowQuoteModal(false), 3000);
-          return () => clearTimeout(t2);
-        }, 100);
-        return () => clearTimeout(t1);
-      } else {
-        lastFlowContext.current = {
-          ...lastFlowContext.current,
-          flow: currentFlowId,
-          step: currentFlowStep,
-        };
-      }
+    if (currentSessionId === lastSessionId.current) return;
+    lastSessionId.current = currentSessionId;
+    quoteHalfwayShown.current = false;
+    const t = setTimeout(() => setShowQuoteModal(true), 1500);
+    return () => clearTimeout(t);
+  }, [isRunning, currentSessionId]);
+
+  // Trigger 2: show once when timer crosses the halfway point
+  useEffect(() => {
+    if (!isRunning || !sessionInitialDuration || quoteHalfwayShown.current)
+      return;
+    if (duration <= sessionInitialDuration / 2) {
+      quoteHalfwayShown.current = true;
+      setShowQuoteModal(true);
     }
-  }, [isRunning, currentSessionId, currentFlowId, currentFlowStep]);
+  }, [duration, isRunning, sessionInitialDuration]);
 
   const handleQuoteModalClose = useCallback(() => setShowQuoteModal(false), []);
 
@@ -310,11 +378,30 @@ export default function Focus() {
   useEffect(() => {
     if (isRunning && isNewSession) {
       const mins = Math.floor(duration / 60);
-      notifications.showSessionStartNotification(sessionType, mins);
       notifications.scheduleSessionEndNotification(sessionType, mins);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRunning, isNewSession]);
+
+  // ── Background session notification ───────────────────────────────────────
+  // Shows a persistent (non-dismissible) notification only while minimized
+  useEffect(() => {
+    const subscription = AppState.addEventListener(
+      "change",
+      async (nextState) => {
+        if (nextState === "background" && isRunning) {
+          await notifications.showBackgroundSessionNotification(
+            sessionType,
+            duration,
+          );
+        } else if (nextState === "active") {
+          await notifications.cancelBackgroundSessionNotification();
+        }
+      },
+    );
+    return () => subscription.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRunning, sessionType]);
 
   // ── Session completion tracking ───────────────────────────────────────────
   useEffect(() => {
@@ -325,11 +412,16 @@ export default function Focus() {
       !currentFlowId &&
       !showFlowCompletionModal
     ) {
+      setLastSessionContext({
+        sessionType,
+        durationSeconds: sessionInitialDuration,
+        tasksCompleted: stagedCompletedCount,
+      });
       setShowSessionComplete(true);
     }
     prevSessionId.current = currentSessionId;
     prevIsRunning.current = isRunning;
-  }, [isRunning, currentSessionId, currentFlowId, showFlowCompletionModal]);
+  }, [isRunning, currentSessionId, currentFlowId, showFlowCompletionModal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const handleSessionStart = async () => {
@@ -356,11 +448,20 @@ export default function Focus() {
   const handleAddJournal = ({
     title,
     content,
+    mood,
+    sessionContext,
   }: {
     title: string;
     content: string;
+    mood?: import("@/store/journalStore").JournalMood;
+    sessionContext?: import("@/store/journalStore").JournalSessionContext;
   }) => {
-    addJournalEntry({ title, blocks: [{ type: "text", content }] });
+    addJournalEntry({
+      title,
+      blocks: [{ type: "text", content }],
+      mood,
+      sessionContext,
+    });
     setShowReflect(false);
     Toast.show({
       type: "reflectionSaveToast",
@@ -389,6 +490,12 @@ export default function Focus() {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const formatTaskTime = (secs: number): string => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
   const bgColor = isActive
@@ -450,7 +557,24 @@ export default function Focus() {
 
       {/* Timer */}
       <Animated.View style={[styles.timerArea, timerAreaStyle]}>
-        <View style={styles.sessionLabelRow}>
+        <TouchableOpacity
+          onPress={() =>
+            !isRunning && !isPaused ? setIsSessionTypeModalVisible(true) : null
+          }
+          activeOpacity={isRunning || isPaused ? 1 : 0.65}
+          style={[
+            styles.sessionLabelRow,
+            !isRunning &&
+              !isPaused && {
+                backgroundColor: colors.surfaceMuted,
+                borderColor: colors.border,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderRadius: 20,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+              },
+          ]}
+        >
           <Ionicons
             name={SESSION_META[sessionType]?.icon as any}
             size={13}
@@ -459,7 +583,15 @@ export default function Focus() {
           <Text style={[styles.sessionLabel, { color: colors.textSecondary }]}>
             {SESSION_META[sessionType]?.label}
           </Text>
-        </View>
+          {!isRunning && !isPaused && (
+            <Ionicons
+              name="sparkles-outline"
+              size={12}
+              color={colors.accent}
+              style={{ marginLeft: 2 }}
+            />
+          )}
+        </TouchableOpacity>
         <TouchableOpacity
           onPress={() =>
             !isRunning && !isPaused && !currentFlowId
@@ -492,6 +624,7 @@ export default function Focus() {
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.chipRow}
+            style={{ flexShrink: 0 }}
           >
             {SESSION_CHIP_ORDER.map((type) => {
               const sel = sessionType === type;
@@ -570,6 +703,83 @@ export default function Focus() {
             </TouchableOpacity>
           )}
 
+          {/* Session task staging */}
+          <View
+            style={[
+              styles.stagingCard,
+              {
+                backgroundColor: colors.surfaceMuted,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <View style={styles.stagingHeader}>
+              <Text
+                style={[styles.stagingTitle, { color: colors.textSecondary }]}
+              >
+                Session tasks
+              </Text>
+              <TouchableOpacity
+                onPress={() => setIsTaskPickerVisible(true)}
+                hitSlop={8}
+              >
+                <Text style={[styles.stagingEdit, { color: colors.accent }]}>
+                  {stagedTasks.length === 0 ? "Add" : "Edit"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {stagedTasks.length === 0 ? (
+              <TouchableOpacity
+                onPress={() => setIsTaskPickerVisible(true)}
+                activeOpacity={0.7}
+                style={styles.stagingEmpty}
+              >
+                <Ionicons
+                  name="list-outline"
+                  size={16}
+                  color={colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.stagingEmptyText,
+                    { color: colors.textSecondary },
+                  ]}
+                >
+                  Stage tasks from your plan
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.stagingRow}>
+                <View
+                  style={[
+                    styles.dot,
+                    { backgroundColor: taskTagColor(stagedTasks[0].tag) },
+                  ]}
+                />
+                <Text
+                  style={[
+                    styles.stagingTaskName,
+                    { color: colors.textSecondary, flex: 1 },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {stagedTasks[0].name}
+                </Text>
+                {stagedTasks.length > 1 && (
+                  <Text
+                    style={[
+                      styles.stagingMore,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    +{stagedTasks.length - 1} more
+                  </Text>
+                )}
+              </View>
+            )}
+          </View>
+
           <View style={styles.startWrap}>
             <StartSessionBtn
               onStart={handleSessionStart}
@@ -577,17 +787,6 @@ export default function Focus() {
               onReset={handleSessionEnd}
             />
           </View>
-
-          <TouchableOpacity
-            onPress={() => setIsSessionTypeModalVisible(true)}
-            style={styles.intelLink}
-          >
-            <Text
-              style={[styles.intelLinkText, { color: colors.textSecondary }]}
-            >
-              ✦ Session Intelligence
-            </Text>
-          </TouchableOpacity>
         </Animated.View>
 
         {/* ACTIVE */}
@@ -649,9 +848,144 @@ export default function Focus() {
               >
                 {currentTask.name}
               </Text>
-              <TouchableOpacity onPress={completeCurrentTask} hitSlop={10}>
-                <Ionicons name="checkmark" size={16} color={colors.accent} />
+              <TouchableOpacity
+                onPress={() => {
+                  completeCurrentTask();
+                  Toast.show({
+                    type: "successToast",
+                    position: "top",
+                    topOffset: 60,
+                    visibilityTime: 1800,
+                    props: { text1: "Task marked as done" },
+                  });
+                }}
+                hitSlop={10}
+              >
+                <Ionicons
+                  name="checkmark-circle-outline"
+                  size={20}
+                  color={colors.accent}
+                />
               </TouchableOpacity>
+            </View>
+          )}
+
+          {stagedTasks.length > 0 && (
+            <View
+              style={[styles.activeTaskList, { borderTopColor: colors.border }]}
+            >
+              <View style={styles.activeTaskListHeader}>
+                <Text
+                  style={[
+                    styles.activeTaskListLabel,
+                    { color: colors.textSecondary },
+                  ]}
+                >
+                  {stagedCompletedCount}/{stagedTasks.length} tasks done
+                </Text>
+              </View>
+              {stagedTasks.map((task) => {
+                const done = task.completed;
+                const target = sessionTaskTargets[task.id];
+                const isOverdue = !done && !!target && sessionElapsed > target;
+
+                // Determine badge text + color
+                let timerText: string;
+                let timerColor: string;
+                if (done) {
+                  timerText = formatTaskTime(taskCompletedAt[task.id] ?? 0);
+                  timerColor = colors.textSecondary;
+                } else if (target) {
+                  const rem = target - sessionElapsed;
+                  if (rem > 0) {
+                    timerText = formatTaskTime(rem);
+                    timerColor = rem <= 60 ? "#E8A43A" : colors.textSecondary;
+                  } else {
+                    timerText = `+${formatTaskTime(-rem)}`;
+                    timerColor = "#E05A5A";
+                  }
+                } else {
+                  timerText = formatTaskTime(sessionElapsed);
+                  timerColor = colors.textSecondary;
+                }
+
+                return (
+                  <TouchableOpacity
+                    key={task.id}
+                    onPress={
+                      done
+                        ? undefined
+                        : () => {
+                            completeSessionTask(task.id);
+                            const onTime = target
+                              ? sessionElapsed <= target
+                              : undefined;
+                            useTaskStore
+                              .getState()
+                              .updateTask({ ...task, completed: true, onTime });
+                            setTaskCompletedAt((prev) => ({
+                              ...prev,
+                              [task.id]: sessionElapsed,
+                            }));
+                            Toast.show({
+                              type: "successToast",
+                              position: "top",
+                              topOffset: 60,
+                              visibilityTime: 1800,
+                              props: { text1: "Task done!" },
+                            });
+                            setTimeout(() => setShowQuoteModal(true), 800);
+                          }
+                    }
+                    activeOpacity={done ? 1 : 0.6}
+                    style={[
+                      styles.activeTaskListRow,
+                      done && { opacity: 0.45 },
+                      isOverdue && {
+                        borderLeftWidth: 2,
+                        borderLeftColor: "#E05A5A",
+                        paddingLeft: 6,
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.dot,
+                        { backgroundColor: taskTagColor(task.tag) },
+                      ]}
+                    />
+                    <Text
+                      style={[
+                        styles.taskName,
+                        {
+                          color: colors.textSecondary,
+                          textDecorationLine: done ? "line-through" : "none",
+                          flex: 1,
+                        },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {task.name}
+                    </Text>
+                    <Text style={[styles.taskTimer, { color: timerColor }]}>
+                      {timerText}
+                    </Text>
+                    {!done ? (
+                      <Ionicons
+                        name="checkmark-circle-outline"
+                        size={20}
+                        color={colors.accent}
+                      />
+                    ) : (
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={20}
+                        color="#4CAF7D"
+                      />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           )}
         </Animated.View>
@@ -666,6 +1000,10 @@ export default function Focus() {
       <QuickTaskModal
         isVisible={isQuickTaskModalVisible}
         onClose={() => setIsQuickTaskModalVisible(false)}
+      />
+      <SessionTaskPickerModal
+        isVisible={isTaskPickerVisible}
+        onClose={() => setIsTaskPickerVisible(false)}
       />
       <SessionIntelligenceModal
         isVisible={isSessionTypeModalVisible}
@@ -704,6 +1042,14 @@ export default function Focus() {
           taskName: currentTask?.name || "",
           duration: duration || 0,
           streak: currentStreak || 0,
+          tasksStaged: stagedTasks.length,
+          tasksCompleted: stagedCompletedCount,
+          tasksOnTime: stagedTasks.filter((t) => {
+            const target = sessionTaskTargets[t.id];
+            return (
+              target && t.completed && (taskCompletedAt[t.id] ?? 0) <= target
+            );
+          }).length,
         }}
         onReflect={handleReflect}
         onViewInsights={() => setShowInsights(true)}
@@ -712,6 +1058,7 @@ export default function Focus() {
         isVisible={showReflect}
         onAdd={handleAddJournal}
         onClose={() => setShowReflect(false)}
+        sessionContext={lastSessionContext ?? undefined}
       />
       <SessionIntelligenceModal
         isVisible={showInsights}
@@ -744,16 +1091,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 20,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
   },
-  streakText: { fontSize: 12, fontFamily: "SoraSemiBold" },
+  streakText: { fontSize: 12, fontFamily: "SoraSemiBold", letterSpacing: 0.2 },
   flowsChip: {
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 20,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
   },
-  flowsChipText: { fontSize: 12, fontFamily: "SoraSemiBold" },
+  flowsChipText: {
+    fontSize: 12,
+    fontFamily: "SoraSemiBold",
+    letterSpacing: 0.3,
+  },
   timerArea: {
     flex: 1,
     alignItems: "center",
@@ -761,23 +1112,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   sessionLabel: {
-    fontSize: 15,
+    fontSize: 14,
     fontFamily: "SoraSemiBold",
-    letterSpacing: 0.4,
+    letterSpacing: 0.5,
   },
   timer: {
-    fontSize: 88,
+    fontSize: 92,
     fontFamily: "SoraBold",
-    letterSpacing: -3,
+    letterSpacing: -3.5,
     includeFontPadding: false,
-    lineHeight: 96,
+    lineHeight: 100,
     textAlign: "center",
   },
   durationHint: {
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: "Sora",
-    marginTop: 12,
-    letterSpacing: 0.2,
+    marginTop: 14,
+    letterSpacing: 0.4,
+    opacity: 0.85,
   },
   controlsWrap: { height: 250, marginBottom: 104 },
   controls: {
@@ -805,7 +1157,7 @@ const styles = StyleSheet.create({
     gap: 5,
     marginBottom: 16,
     justifyContent: "center",
-    textAlign: "center",
+    alignSelf: "center",
   },
   chipLabel: {
     fontSize: 12,
@@ -866,5 +1218,86 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
+  },
+
+  // Staged task list (active state)
+  activeTaskList: {
+    width: "100%",
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+  },
+  activeTaskListHeader: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginBottom: 4,
+  },
+  activeTaskListLabel: {
+    fontSize: 11,
+    fontFamily: "Sora",
+  },
+  activeTaskListRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  taskTimer: {
+    fontSize: 12,
+    fontFamily: "SoraSemiBold",
+    minWidth: 32,
+    textAlign: "right",
+  },
+
+  // Idle staging card
+  stagingCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 12,
+    width: "100%",
+    gap: 6,
+  },
+  stagingHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 2,
+  },
+  stagingTitle: {
+    fontSize: 12,
+    fontFamily: "SoraSemiBold",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  stagingEdit: {
+    fontSize: 13,
+    fontFamily: "SoraSemiBold",
+  },
+  stagingEmpty: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 4,
+  },
+  stagingEmptyText: {
+    fontSize: 13,
+    fontFamily: "Sora",
+  },
+  stagingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 2,
+  },
+  stagingTaskName: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: "Sora",
+  },
+  stagingMore: {
+    fontSize: 12,
+    fontFamily: "Sora",
+    marginTop: 2,
   },
 });

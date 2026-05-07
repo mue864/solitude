@@ -4,20 +4,30 @@ import {
   getDayNameShort,
   useSessionIntelligence,
 } from "@/store/sessionIntelligence";
+import { useSessionStore, type SessionType } from "@/store/sessionState";
+import { useTaskStore } from "@/store/taskStore";
 import { Ionicons } from "@expo/vector-icons";
-import React, { useEffect, useMemo, useRef } from "react";
+import { useRouter } from "expo-router";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Animated,
-  Dimensions,
   Easing,
+  Modal,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 
-const { width: SCREEN_W } = Dimensions.get("window");
 const SCORE_R = 52;
 const SCORE_STROKE = 10;
 const SCORE_SIZE = (SCORE_R + SCORE_STROKE) * 2 + 4;
@@ -28,6 +38,40 @@ const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function Insights() {
   const { colors } = useTheme();
+  const router = useRouter();
+  const setSessionType = useSessionStore((s) => s.setSessionType);
+  const currentSessionType = useSessionStore((s) => s.sessionType);
+  const isSessionActive = useSessionStore((s) => s.isRunning && !s.isPaused);
+  const isSessionPaused = useSessionStore((s) => s.isPaused);
+  const [showSwitchWarning, setShowSwitchWarning] = useState(false);
+  const pendingSessionRef = useRef<SessionType | null>(null);
+
+  const handleChipPress = useCallback(
+    (sessionType: SessionType) => {
+      // Already the active/paused session type — just go to focus, don't disrupt it
+      if (
+        (isSessionActive || isSessionPaused) &&
+        sessionType === currentSessionType
+      ) {
+        router.navigate("/(main)/focus");
+        return;
+      }
+      if (isSessionActive || isSessionPaused) {
+        pendingSessionRef.current = sessionType;
+        setShowSwitchWarning(true);
+      } else {
+        setSessionType(sessionType);
+        router.navigate("/(main)/focus");
+      }
+    },
+    [
+      isSessionActive,
+      isSessionPaused,
+      currentSessionType,
+      setSessionType,
+      router,
+    ],
+  );
   const {
     userStats,
     getProductivityInsights,
@@ -35,13 +79,43 @@ export default function Insights() {
     sessionRecords,
   } = useSessionIntelligence();
 
+  const tasks = useTaskStore((s) => s.tasks);
+
+  // Priority breakdown — all tasks ever created, grouped by tag
+  const priorityBreakdown = useMemo(() => {
+    const tags = [
+      { key: "urgent", label: "Urgent", color: "#E05A5A" },
+      { key: "important", label: "Important", color: "#E8A43A" },
+      { key: "deepwork", label: "Deep Work", color: "#5B8DEF" },
+      { key: "quickwin", label: "Quick Win", color: "#4CAF7D" },
+    ] as const;
+    return tags
+      .map(({ key, label, color }) => {
+        const group = tasks.filter((t) => t.tag === key);
+        const done = group.filter((t) => t.completed);
+        const onTimeDone = done.filter((t) => t.onTime === true).length;
+        return {
+          key,
+          label,
+          color,
+          total: group.length,
+          done: done.length,
+          onTimeDone,
+          hasOnTimeData: done.some((t) => t.onTime !== undefined),
+        };
+      })
+      .filter((g) => g.total > 0);
+  }, [tasks]);
+
   const productivity = useMemo(
     () => getProductivityInsights(),
-    [getProductivityInsights],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [userStats, sessionRecords],
   );
   const recommendations = useMemo(
     () => getRecommendations(),
-    [getRecommendations],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [userStats],
   );
   const score = Math.min(productivity.productivityScore, 100);
 
@@ -165,7 +239,7 @@ export default function Insights() {
             <View style={s.statGrid}>
               <StatChip
                 icon="checkmark-done"
-                label="Sessions"
+                label={userStats.totalSessions === 1 ? "Attempt" : "Attempts"}
                 value={String(userStats.totalSessions)}
                 colors={colors}
               />
@@ -246,6 +320,82 @@ export default function Insights() {
             })}
           </View>
         </View>
+
+        {/* Priority breakdown */}
+        {priorityBreakdown.length > 0 && (
+          <View
+            style={[
+              s.card,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
+            <View style={s.cardHeader}>
+              <Text style={[s.cardTitle, { color: colors.textPrimary }]}>
+                Task Priority
+              </Text>
+              <Text style={[s.cardMeta, { color: colors.textSecondary }]}>
+                {tasks.filter((t) => t.completed).length} of {tasks.length} done
+              </Text>
+            </View>
+            <View style={s.priorityList}>
+              {priorityBreakdown.map((g) => {
+                const pct = g.total > 0 ? g.done / g.total : 0;
+                return (
+                  <View key={g.key} style={s.priorityRow}>
+                    <View style={s.priorityLabelRow}>
+                      <View
+                        style={[s.priorityDot, { backgroundColor: g.color }]}
+                      />
+                      <Text
+                        style={[
+                          s.priorityLabel,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
+                        {g.label}
+                      </Text>
+                      <Text
+                        style={[s.priorityCount, { color: colors.textPrimary }]}
+                      >
+                        {g.done}/{g.total}
+                      </Text>
+                      {g.hasOnTimeData && g.onTimeDone > 0 && (
+                        <View
+                          style={[
+                            s.onTimeChip,
+                            { backgroundColor: "rgba(76,175,125,0.15)" },
+                          ]}
+                        >
+                          <Text
+                            style={[s.onTimeChipText, { color: "#4CAF7D" }]}
+                          >
+                            {g.onTimeDone} on time
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    <View
+                      style={[
+                        s.priorityTrack,
+                        { backgroundColor: colors.surfaceMuted },
+                      ]}
+                    >
+                      <View
+                        style={[
+                          s.priorityFill,
+                          {
+                            width: `${Math.round(pct * 100)}%`,
+                            backgroundColor: g.color,
+                          },
+                        ]}
+                      />
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
 
         {/* Recent sessions */}
         {recentSessions.length > 0 && (
@@ -378,16 +528,89 @@ export default function Insights() {
               "Keep building your streak — consistency is the key to deep focus."}
           </Text>
           {!!recommendations.recommendedSession && (
-            <View
+            <TouchableOpacity
+              onPress={() =>
+                handleChipPress(
+                  recommendations.recommendedSession as SessionType,
+                )
+              }
+              activeOpacity={0.75}
               style={[s.insightChip, { backgroundColor: colors.accentMuted }]}
             >
+              <Ionicons name="arrow-forward" size={12} color={colors.accent} />
               <Text style={[s.insightChipText, { color: colors.accent }]}>
                 Try: {recommendations.recommendedSession}
               </Text>
-            </View>
+            </TouchableOpacity>
           )}
         </View>
       </ScrollView>
+
+      {/* Session-in-progress switch warning */}
+      <Modal
+        visible={showSwitchWarning}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowSwitchWarning(false)}
+      >
+        <Pressable
+          style={s.modalOverlay}
+          onPress={() => setShowSwitchWarning(false)}
+        >
+          <Pressable
+            style={[
+              s.modalSheet,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View
+              style={[s.modalIconWrap, { backgroundColor: colors.accentMuted }]}
+            >
+              <Ionicons name="timer-outline" size={22} color={colors.accent} />
+            </View>
+            <Text style={[s.modalTitle, { color: colors.textPrimary }]}>
+              Session in progress
+            </Text>
+            <Text style={[s.modalBody, { color: colors.textSecondary }]}>
+              Switching session type will end your current session without
+              saving it. Are you sure?
+            </Text>
+            <View style={s.modalRow}>
+              <TouchableOpacity
+                style={[
+                  s.modalBtn,
+                  {
+                    backgroundColor: colors.surfaceMuted,
+                    borderColor: colors.border,
+                    borderWidth: 1,
+                  },
+                ]}
+                onPress={() => setShowSwitchWarning(false)}
+              >
+                <Text style={[s.modalBtnText, { color: colors.textSecondary }]}>
+                  Keep going
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.modalBtn, { backgroundColor: colors.destructive }]}
+                onPress={() => {
+                  setShowSwitchWarning(false);
+                  if (pendingSessionRef.current) {
+                    setSessionType(pendingSessionRef.current);
+                    pendingSessionRef.current = null;
+                    router.navigate("/(main)/focus");
+                  }
+                }}
+              >
+                <Text style={[s.modalBtnText, { color: "#fff" }]}>
+                  Switch anyway
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -450,9 +673,9 @@ const s = StyleSheet.create({
   scoreUnit: { fontSize: 10, fontFamily: "Sora" },
 
   // Stat chips
-  statGrid: { flex: 1, flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  statGrid: { flex: 1, flexDirection: "column", gap: 7 },
   statChip: {
-    width: "47%",
+    width: "100%",
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 10,
@@ -479,6 +702,30 @@ const s = StyleSheet.create({
   },
   barFill: { width: "100%", borderRadius: 6 },
   barLabel: { fontSize: 9, fontFamily: "SoraSemiBold" },
+
+  // Priority breakdown
+  priorityList: { gap: 14 },
+  priorityRow: { gap: 6 },
+  priorityLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
+  priorityDot: { width: 8, height: 8, borderRadius: 4 },
+  priorityLabel: { flex: 1, fontSize: 13, fontFamily: "Sora" },
+  priorityCount: { fontSize: 13, fontFamily: "SoraSemiBold" },
+  onTimeChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  onTimeChipText: { fontSize: 11, fontFamily: "SoraSemiBold" },
+  priorityTrack: {
+    height: 6,
+    borderRadius: 3,
+    overflow: "hidden",
+  },
+  priorityFill: { height: 6, borderRadius: 3, minWidth: 4 },
 
   // Session rows
   sessionRow: {
@@ -530,9 +777,52 @@ const s = StyleSheet.create({
   insightBody: { fontSize: 14, fontFamily: "Sora", lineHeight: 22 },
   insightChip: {
     alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 7,
     borderRadius: 20,
+    marginTop: 4,
   },
   insightChipText: { fontSize: 13, fontFamily: "SoraSemiBold" },
+  // ---- switch warning modal ----
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalSheet: {
+    width: "88%",
+    maxWidth: 380,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 24,
+    alignItems: "center",
+  },
+  modalIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14,
+  },
+  modalTitle: { fontSize: 18, fontFamily: "SoraBold", marginBottom: 10 },
+  modalBody: {
+    fontSize: 14,
+    fontFamily: "Sora",
+    lineHeight: 22,
+    textAlign: "center",
+    marginBottom: 24,
+  },
+  modalRow: { flexDirection: "row", gap: 10, width: "100%" },
+  modalBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 14,
+    alignItems: "center",
+  },
+  modalBtnText: { fontSize: 14, fontFamily: "SoraSemiBold" },
 });

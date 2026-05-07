@@ -1,6 +1,7 @@
 import Button from "@/components/Button";
 import { Strings } from "@/constants";
 import { useTheme } from "@/context/ThemeContext";
+import { useAuthStore } from "@/store/authStore";
 import { useOnboardingStore } from "@/store/onboardingStore";
 import { router } from "expo-router";
 import LottieView from "lottie-react-native";
@@ -37,6 +38,7 @@ export default function CompleteSetup() {
   const setOnboardingComplete = useOnboardingStore(
     (state) => state.setFinishedOnboarding,
   );
+  const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
 
   const s = StyleSheet.create({
     root: { flex: 1, paddingTop: 40 },
@@ -75,7 +77,11 @@ export default function CompleteSetup() {
           buttonText={Strings.completeSetupBtn}
           nextPage={() => {
             setOnboardingComplete();
-            router.push("/(main)/focus");
+            if (isLoggedIn) {
+              router.replace("/(main)/focus" as any);
+            } else {
+              router.replace("/(screens)/signInPrompt" as any);
+            }
           }}
         />
       </View>

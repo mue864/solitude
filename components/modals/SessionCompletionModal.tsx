@@ -2,8 +2,9 @@ import BottomSheet from "@/components/BottomSheet";
 import { useTheme } from "@/context/ThemeContext";
 import { useOnboardingStore } from "@/store/onboardingStore";
 import { useSessionIntelligence } from "@/store/sessionIntelligence";
+import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -26,6 +27,9 @@ interface SessionCompletionModalProps {
     taskName: string;
     duration: number; // seconds
     streak: number;
+    tasksStaged?: number;
+    tasksCompleted?: number;
+    tasksOnTime?: number; // tasks completed within their set target
   };
   onReflect: () => void;
   onViewInsights: () => void;
@@ -46,8 +50,11 @@ export default function SessionCompletionModal({
 }: SessionCompletionModalProps) {
   const { colors } = useTheme();
   const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [selectedStars, setSelectedStars] = useState(0);
+  const [saved, setSaved] = useState(false);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const checkmarkScale = useSharedValue(0);
-  const { getProductivityInsights } = useSessionIntelligence();
+  const { getProductivityInsights, rateLastSession } = useSessionIntelligence();
   const insights = getProductivityInsights();
   const workType = useOnboardingStore((state) => state.workType);
 
@@ -74,6 +81,8 @@ export default function SessionCompletionModal({
 
   useEffect(() => {
     if (isVisible) {
+      setSelectedStars(0);
+      setSaved(false);
       if (sound) sound.replayAsync();
       Vibration.vibrate(100);
       checkmarkScale.value = withSequence(
@@ -85,6 +94,15 @@ export default function SessionCompletionModal({
     }
   }, [isVisible, sound]);
 
+  const handleStarPress = (stars: number) => {
+    setSelectedStars(stars);
+    // Store as 1-10 scale (1 star = 2, 5 stars = 10)
+    rateLastSession(stars * 2);
+    setSaved(true);
+    if (savedTimer.current) clearTimeout(savedTimer.current);
+    savedTimer.current = setTimeout(() => setSaved(false), 1800);
+  };
+
   const checkmarkStyle = useAnimatedStyle(() => ({
     transform: [{ scale: checkmarkScale.value }],
   }));
@@ -92,7 +110,9 @@ export default function SessionCompletionModal({
   const breakTip = workType ? BREAK_TIPS[workType] : null;
   const insight =
     breakTip ??
-    (insights.length > 0 ? insights[0] : "Great job! Keep up the focus.");
+    (insights.recommendations.length > 0
+      ? insights.recommendations[0]
+      : "Great job! Keep up the focus.");
 
   return (
     <BottomSheet isVisible={isVisible} onClose={onClose}>
@@ -140,6 +160,65 @@ export default function SessionCompletionModal({
             Day streak
           </Text>
         </View>
+        {(session.tasksStaged ?? 0) > 0 && (
+          <>
+            <View style={[s.statDivider, { backgroundColor: colors.border }]} />
+            <View style={s.stat}>
+              <Text style={[s.statValue, { color: "#4CAF7D" }]}>
+                {session.tasksCompleted ?? 0}/{session.tasksStaged}
+              </Text>
+              <Text style={[s.statLabel, { color: colors.textSecondary }]}>
+                Tasks done
+              </Text>
+            </View>
+            {(session.tasksOnTime ?? 0) > 0 && (
+              <>
+                <View
+                  style={[s.statDivider, { backgroundColor: colors.border }]}
+                />
+                <View style={s.stat}>
+                  <Text style={[s.statValue, { color: "#4CAF7D" }]}>
+                    {session.tasksOnTime}
+                  </Text>
+                  <Text style={[s.statLabel, { color: colors.textSecondary }]}>
+                    On time
+                  </Text>
+                </View>
+              </>
+            )}
+          </>
+        )}
+      </View>
+
+      {/* Focus quality rating */}
+      <View style={s.ratingContainer}>
+        <Text style={[s.ratingLabel, { color: colors.textSecondary }]}>
+          How was your focus?
+        </Text>
+        <View style={s.starsRow}>
+          {[1, 2, 3, 4, 5].map((star) => (
+            <TouchableOpacity
+              key={star}
+              onPress={() => handleStarPress(star)}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+            >
+              <Ionicons
+                name={star <= selectedStars ? "star" : "star-outline"}
+                size={28}
+                color={star <= selectedStars ? colors.accent : colors.border}
+              />
+            </TouchableOpacity>
+          ))}
+        </View>
+        {saved && (
+          <Text style={[s.savedText, { color: colors.accent }]}>Saved ✓</Text>
+        )}
+        {!saved && selectedStars === 0 && (
+          <Text style={[s.ratingHint, { color: colors.textSecondary }]}>
+            Optional — helps improve your insights
+          </Text>
+        )}
       </View>
 
       {/* Insight */}
@@ -214,6 +293,29 @@ const s = StyleSheet.create({
   statValue: { fontSize: 22, fontFamily: "SoraBold" },
   statLabel: { fontSize: 12, fontFamily: "Sora", marginTop: 2 },
   statDivider: { width: 1 },
+
+  ratingContainer: {
+    alignItems: "center",
+    marginBottom: 16,
+    gap: 8,
+  },
+  ratingLabel: {
+    fontSize: 13,
+    fontFamily: "Sora",
+  },
+  starsRow: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  savedText: {
+    fontSize: 12,
+    fontFamily: "SoraSemiBold",
+  },
+  ratingHint: {
+    fontSize: 11,
+    fontFamily: "Sora",
+    opacity: 0.6,
+  },
 
   insightCard: {
     borderRadius: 14,

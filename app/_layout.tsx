@@ -2,8 +2,9 @@ import WarningToast from "@/components/modals/WarningToast";
 import ReflectionSaveToast from "@/components/ReflectionSaveToast";
 import UndoToast from "@/components/undoToast";
 import { ThemeProvider, useTheme } from "@/context/ThemeContext";
+import { useAuthStore } from "@/store/authStore";
 import { useSessionStore } from "@/store/sessionState";
-import notifee, { EventType } from "@notifee/react-native";
+import notifee, { AndroidImportance, EventType } from "@notifee/react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { TransitionPresets } from "@react-navigation/stack";
 import { useFonts } from "expo-font";
@@ -20,6 +21,55 @@ import Toast, { BaseToast, ErrorToast } from "react-native-toast-message";
 SplashScreen.preventAutoHideAsync();
 
 // Must be registered at module level for background events
+
+// Foreground service task — ticks the live countdown while app is minimized
+notifee.registerForegroundService((_notification) => {
+  return new Promise((resolve) => {
+    const tick = async () => {
+      const state = useSessionStore.getState();
+
+      if (!state.isRunning) {
+        try {
+          await notifee.stopForegroundService();
+        } catch (_) {}
+        resolve();
+        return;
+      }
+
+      const remaining = state.duration;
+      const mins = Math.floor(remaining / 60);
+      const secs = remaining % 60;
+      const timeStr = `${mins}:${secs.toString().padStart(2, "0")}`;
+      const endDate = new Date(Date.now() + remaining * 1000);
+      const endTimeStr = endDate.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+      try {
+        await notifee.displayNotification({
+          id: "background-session",
+          title: `${state.sessionType} · In Progress`,
+          body: `${timeStr} remaining · Ends at ${endTimeStr}`,
+          android: {
+            channelId: "background-sessions",
+            smallIcon: "ic_launcher",
+            ongoing: true,
+            autoCancel: false,
+            asForegroundService: true,
+            pressAction: { id: "default" },
+            importance: AndroidImportance.LOW,
+          },
+        });
+      } catch (_) {}
+
+      setTimeout(tick, 1000);
+    };
+
+    tick();
+  });
+});
+
 notifee.onBackgroundEvent(async ({ type, detail }) => {
   try {
     if (type === EventType.PRESS || type === EventType.ACTION_PRESS) {
@@ -61,10 +111,12 @@ export default function RootLayout() {
   const checkAndResetStreak = useSessionStore(
     (state) => state.checkAndResetStreak,
   );
+  const hydrateAuth = useAuthStore((state) => state.hydrate);
 
   useEffect(() => {
     checkAndResetStreak();
-  }, [checkAndResetStreak]);
+    hydrateAuth();
+  }, [checkAndResetStreak, hydrateAuth]);
 
   useEffect(() => {
     const unsubscribe = notifee.onForegroundEvent(({ type, detail }) => {
@@ -124,6 +176,34 @@ function ThemedRoot({ onLayout }: { onLayout: () => void }) {
                 contentStyle: styles.screenContent,
               }}
             />
+            <Stack.Screen
+              name="(auth)"
+              options={{
+                headerShown: false,
+                contentStyle: styles.screenContent,
+              }}
+            />
+            <Stack.Screen
+              name="(screens)/journalEditor"
+              options={{
+                headerShown: false,
+                contentStyle: styles.screenContent,
+              }}
+            />
+            <Stack.Screen
+              name="(screens)/paywall"
+              options={{
+                headerShown: false,
+                contentStyle: styles.screenContent,
+              }}
+            />
+            <Stack.Screen
+              name="(screens)/signInPrompt"
+              options={{
+                headerShown: false,
+                contentStyle: styles.screenContent,
+              }}
+            />
           </Stack>
           <Toast
             config={{
@@ -138,6 +218,15 @@ function ThemedRoot({ onLayout }: { onLayout: () => void }) {
                   text1={props?.text1 ?? ""}
                   text2={props?.text2}
                   onPress={props?.onPress ?? (() => {})}
+                />
+              ),
+              successToast: ({ props }) => (
+                <WarningToast
+                  text1={props?.text1 ?? ""}
+                  text2={props?.text2}
+                  icon="checkmark-circle"
+                  iconColor="#4CAF7D"
+                  onPress={props?.onPress}
                 />
               ),
               reflectionSaveToast: ({ props }) => (

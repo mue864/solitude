@@ -30,28 +30,26 @@ export default function BottomSheet({
   children,
 }: BottomSheetProps) {
   const { colors } = useTheme();
-  const sheetOpacity = useSharedValue(0);
+  const sheetTranslateY = useSharedValue(300);
   const overlayOpacity = useSharedValue(0);
 
   useEffect(() => {
     if (isVisible) {
       overlayOpacity.value = withTiming(1, { duration: 200 });
-      sheetOpacity.value = withTiming(1, { duration: 220 });
+      sheetTranslateY.value = withTiming(0, { duration: 260 });
     } else {
       overlayOpacity.value = withTiming(0, { duration: 180 });
-      sheetOpacity.value = withTiming(0, { duration: 180 });
+      sheetTranslateY.value = withTiming(300, { duration: 200 });
     }
   }, [isVisible]);
 
   const sheetStyle = useAnimatedStyle(() => ({
-    opacity: sheetOpacity.value,
+    transform: [{ translateY: sheetTranslateY.value }],
   }));
 
   const overlayStyle = useAnimatedStyle(() => ({
     opacity: overlayOpacity.value,
   }));
-
-  if (!isVisible) return null;
 
   return (
     <Modal
@@ -59,14 +57,21 @@ export default function BottomSheet({
       visible={isVisible}
       onRequestClose={onClose}
       animationType="none"
+      statusBarTranslucent
     >
+      {/* Backdrop — full screen, behind the sheet */}
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose}>
+        <Animated.View
+          style={[StyleSheet.absoluteFill, styles.overlay, overlayStyle]}
+        />
+      </Pressable>
+
+      {/* Sheet sits at the bottom, keyboard pushes it up */}
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : "padding"}
+        style={styles.avoidingContainer}
+        pointerEvents="box-none"
       >
-        <Pressable style={styles.flex} onPress={onClose}>
-          <Animated.View style={[styles.overlay, overlayStyle]} />
-        </Pressable>
         <Animated.View
           style={[
             styles.sheet,
@@ -93,10 +98,13 @@ export default function BottomSheet({
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
   overlay: {
-    ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  avoidingContainer: {
+    flex: 1,
+    justifyContent: "flex-end",
+    pointerEvents: "box-none",
   },
   sheet: {
     borderTopLeftRadius: 24,

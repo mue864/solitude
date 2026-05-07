@@ -1,4 +1,11 @@
+import JournalInsightModal from "@/components/modals/JournalInsightModal";
 import { useTheme } from "@/context/ThemeContext";
+import { aiApi, storageApi } from "@/services/api";
+import {
+  DAILY_AUDIO_INSIGHT_LIMIT,
+  useAiUsageStore,
+} from "@/store/aiUsageStore";
+import { useAuthStore } from "@/store/authStore";
 import { Ionicons } from "@expo/vector-icons";
 import { format, parseISO } from "date-fns";
 import { Audio } from "expo-av";
@@ -27,7 +34,14 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DraggableBlock from "../../components/DraggableBlock";
-import { JournalBlock, useJournalStore } from "../../store/journalStore";
+import {
+  JOURNAL_TAGS,
+  JournalBlock,
+  JournalInsight,
+  JournalMood,
+  JournalTag,
+  useJournalStore,
+} from "../../store/journalStore";
 
 // ─── Utilities ──────────────────────────────────────────────
 
@@ -189,12 +203,21 @@ function AudioBlock({
         uri = recording.getURI();
       }
       if (uri) {
-        onUpdate({
-          type: "audio",
-          uri,
-          duration: finalTime,
-          title: audioTitle || `Recording ${new Date().toLocaleTimeString()}`,
-        });
+        const title =
+          audioTitle || `Recording ${new Date().toLocaleTimeString()}`;
+        // Save locally first so playback works immediately
+        onUpdate({ type: "audio", uri, duration: finalTime, title });
+
+        // Upload to MinIO in the background — update block with URL when done
+        const filename = `recording-${Date.now()}.m4a`;
+        storageApi
+          .uploadAudio(uri, filename)
+          .then(({ url }) => {
+            onUpdate({ type: "audio", uri, duration: finalTime, title, url });
+          })
+          .catch(() => {
+            // Non-fatal: entry still saves, AI insight uses metadata fallback
+          });
       } else throw new Error("No URI");
     } catch {
       Alert.alert(
@@ -503,6 +526,10 @@ export default function JournalEditor() {
   const entries = useJournalStore((s) => s.entries);
   const addEntry = useJournalStore((s) => s.addEntry);
   const editEntry = useJournalStore((s) => s.editEntry);
+  const saveInsight = useJournalStore((s) => s.saveInsight);
+  const isPro = useAuthStore((s) => s.user?.isPro ?? false);
+  const canRequestInsight = useAiUsageStore((s) => s.canRequestInsight);
+  const recordInsight = useAiUsageStore((s) => s.recordInsight);
 
   const entry = useMemo(() => entries.find((e) => e.id === id), [entries, id]);
 
@@ -510,10 +537,29 @@ export default function JournalEditor() {
   const [blocks, setBlocks] = useState<JournalBlock[]>(
     entry?.blocks?.length ? entry.blocks : [{ type: "text", content: "" }],
   );
+  const [mood, setMood] = useState<JournalMood | undefined>(entry?.mood);
+  const [tags, setTags] = useState<JournalTag[]>(entry?.tags ?? []);
   const [recordingIdx, setRecordingIdx] = useState<number | null>(null);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [unsavedChanges, setUnsavedChanges] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+
+  // ── AI Insight state ───────────────────────────────────────
+  const [showInsight, setShowInsight] = useState(false);
+  const [insightLoading, setInsightLoading] = useState(false);
+  const [insight, setInsight] = useState<JournalInsight | null>(null);
+  const [insightError, setInsightError] = useState<string | null>(null);
+  const [insightIsLimit, setInsightIsLimit] = useState(false);
+  const savedEntryIdRef = useRef<string | null>(null);
+
+  const wordCount = useMemo(() => {
+    const text = blocks
+      .filter((b) => b.type === "text")
+      .map((b) => (b as any).content || "")
+      .join(" ");
+    const words = text.trim().split(/\s+/).filter(Boolean);
+    return words.length;
+  }, [blocks]);
 
   const menuAnimation = useRef(new Animated.Value(0)).current;
 
@@ -563,16 +609,94 @@ export default function JournalEditor() {
   );
 
   // ── Actions ───────────────────────────────────────────────
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     if (isEmpty) {
       Alert.alert("Empty Entry", "Add some content before saving.");
       return;
     }
-    if (entry) editEntry(entry.id, { title, blocks });
-    else addEntry({ title, blocks });
+
+    let savedId: string;
+    if (entry) {
+      editEntry(entry.id, { title, blocks, mood, tags });
+      savedId = entry.id;
+    } else {
+      // addEntry doesn't return the id; read it from the store after
+      addEntry({ title, blocks, mood, tags });
+      savedId = useJournalStore.getState().entries[0]?.id ?? "";
+    }
+    savedEntryIdRef.current = savedId;
     setUnsavedChanges(false);
-    router.back();
-  }, [isEmpty, entry, title, blocks, editEntry, addEntry, router]);
+
+    if (isPro) {
+      // hasAudio: backend only consumes tokens when a MinIO URL is present
+      const hasAudio = blocks.some(
+        (b) => b.type === "audio" && !!(b as any).url,
+      );
+
+      // Frontend hint only — real enforcement is on the backend (HTTP 429)
+      if (!canRequestInsight(hasAudio)) {
+        setInsightIsLimit(true);
+        setInsightError(
+          `You've reached your daily limit of ${DAILY_AUDIO_INSIGHT_LIMIT} AI insights for entries with audio. Resets at midnight.`,
+        );
+        setShowInsight(true);
+        return;
+      }
+
+      setInsight(null);
+      setInsightError(null);
+      setInsightIsLimit(false);
+      setInsightLoading(true);
+      setShowInsight(true);
+      try {
+        const res = await aiApi.getJournalInsight({
+          entryId: savedId,
+          title,
+          mood: mood ?? null,
+          tags: tags as string[],
+          blocks: blocks as object[],
+        });
+        const data = res.data;
+        recordInsight(hasAudio);
+        setInsight(data);
+        saveInsight(savedId, {
+          summary: data.summary,
+          followUpQuestion: data.followUpQuestion,
+          moodScore: data.moodScore,
+          themes: data.themes,
+        });
+      } catch (err: any) {
+        const status = err?.response?.status;
+        if (status === 429) {
+          setInsightIsLimit(true);
+          setInsightError(
+            err?.response?.data ||
+              "You've reached your daily limit for audio AI insights. Resets at midnight.",
+          );
+        } else {
+          setInsightError("Couldn't fetch insight right now. Try again later.");
+        }
+      } finally {
+        setInsightLoading(false);
+      }
+    } else {
+      router.back();
+    }
+  }, [
+    isEmpty,
+    entry,
+    title,
+    blocks,
+    mood,
+    tags,
+    editEntry,
+    addEntry,
+    isPro,
+    canRequestInsight,
+    recordInsight,
+    saveInsight,
+    router,
+  ]);
 
   const handleBack = useCallback(() => {
     if (unsavedChanges) {
@@ -907,123 +1031,261 @@ export default function JournalEditor() {
   const saveEnabled = !isEmpty && unsavedChanges;
 
   return (
-    <View style={[es.screen, { backgroundColor: colors.background }]}>
-      {/* ── Header ── */}
-      <View
-        style={[
-          es.header,
-          { paddingTop: insets.top + 12, borderBottomColor: colors.border },
-        ]}
-      >
-        <TouchableOpacity onPress={handleBack} style={es.headerBtn} hitSlop={8}>
-          <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-        </TouchableOpacity>
-        <View style={es.headerCenter}>
-          <Text style={[es.headerDate, { color: colors.textPrimary }]}>
-            {formattedDate}
-          </Text>
-          {unsavedChanges && (
-            <Text style={[es.unsavedText, { color: colors.textSecondary }]}>
-              Unsaved changes
-            </Text>
-          )}
-        </View>
-        <TouchableOpacity
-          onPress={handleSave}
-          style={es.headerBtn}
-          disabled={!saveEnabled}
-          hitSlop={8}
-        >
-          <Text
-            style={[
-              es.saveText,
-              { color: saveEnabled ? colors.accent : colors.border },
-            ]}
-          >
-            Save
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 20}
-      >
-        <ScrollView
-          ref={scrollRef}
-          contentContainerStyle={[
-            es.scrollContent,
-            { paddingBottom: insets.bottom + 160 },
+    <>
+      <View style={[es.screen, { backgroundColor: colors.background }]}>
+        {/* ── Header ── */}
+        <View
+          style={[
+            es.header,
+            { paddingTop: insets.top + 12, borderBottomColor: colors.border },
           ]}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive"
-          showsVerticalScrollIndicator={false}
         >
-          {/* ── Title ── */}
-          <TextInput
-            style={[
-              es.titleInput,
-              { color: colors.textPrimary, borderBottomColor: colors.border },
-            ]}
-            placeholder="Entry title..."
-            placeholderTextColor={colors.textSecondary}
-            value={title}
-            onChangeText={setTitle}
-          />
-
-          {/* ── Blocks ── */}
-          <View style={{ paddingHorizontal: 16 }}>
-            {blocks.map((block, idx) => (
-              <DraggableBlock
-                key={idx}
-                index={idx}
-                onReorder={handleReorder}
-                isDragging={isDragging}
-                onDragStart={() => setIsDragging(true)}
-                onDragEnd={() => setIsDragging(false)}
-                blockHeight={200}
-                onDelete={() => handleRemoveBlock(idx)}
-                canDelete={blocks.length > 1}
-              >
-                <View style={{ marginHorizontal: 0 }}>
-                  {renderBlock(block, idx)}
-                </View>
-              </DraggableBlock>
-            ))}
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-
-      {/* ── FAB + Add block menu ── */}
-      <View style={es.fabContainer} pointerEvents="box-none">
-        <AddBlockMenu
-          visible={showAddMenu}
-          onAdd={handleAddBlock}
-          menuAnimation={menuAnimation}
-        />
-        <TouchableOpacity
-          style={[es.fab, { backgroundColor: colors.accent }]}
-          onPress={() => setShowAddMenu((p) => !p)}
-          activeOpacity={0.85}
-        >
-          <Animated.View
-            style={{
-              transform: [
-                {
-                  rotate: menuAnimation.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ["0deg", "45deg"],
-                  }),
-                },
-              ],
-            }}
+          <TouchableOpacity
+            onPress={handleBack}
+            style={es.headerBtn}
+            hitSlop={8}
           >
-            <Ionicons name="add" size={28} color="#fff" />
-          </Animated.View>
-        </TouchableOpacity>
+            <Ionicons
+              name="chevron-back"
+              size={24}
+              color={colors.textPrimary}
+            />
+          </TouchableOpacity>
+          <View style={es.headerCenter}>
+            <Text style={[es.headerDate, { color: colors.textPrimary }]}>
+              {formattedDate}
+            </Text>
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+            >
+              {wordCount > 0 && (
+                <Text style={[es.unsavedText, { color: colors.textSecondary }]}>
+                  {wordCount} {wordCount === 1 ? "word" : "words"}
+                </Text>
+              )}
+              {unsavedChanges && (
+                <Text style={[es.unsavedText, { color: colors.textSecondary }]}>
+                  · Unsaved
+                </Text>
+              )}
+            </View>
+          </View>
+          <TouchableOpacity
+            onPress={handleSave}
+            style={es.headerBtn}
+            disabled={!saveEnabled}
+            hitSlop={8}
+          >
+            <Text
+              style={[
+                es.saveText,
+                { color: saveEnabled ? colors.accent : colors.border },
+              ]}
+            >
+              Save
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 20}
+        >
+          <ScrollView
+            ref={scrollRef}
+            contentContainerStyle={[
+              es.scrollContent,
+              { paddingBottom: insets.bottom + 160 },
+            ]}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* ── Title ── */}
+            <TextInput
+              style={[
+                es.titleInput,
+                { color: colors.textPrimary, borderBottomColor: colors.border },
+              ]}
+              placeholder="Entry title..."
+              placeholderTextColor={colors.textSecondary}
+              value={title}
+              onChangeText={setTitle}
+            />
+
+            {/* ── Mood picker ── */}
+            <View style={es.moodRow}>
+              {([1, 2, 3, 4, 5] as JournalMood[]).map((v, i) => {
+                const emojis = ["😩", "😕", "😐", "🙂", "🔥"];
+                const selected = mood === v;
+                return (
+                  <TouchableOpacity
+                    key={v}
+                    onPress={() => setMood((p) => (p === v ? undefined : v))}
+                    style={[
+                      es.moodBtn,
+                      selected
+                        ? {
+                            backgroundColor: colors.accentMuted,
+                            borderColor: colors.accent,
+                          }
+                        : {
+                            backgroundColor: colors.surfaceMuted,
+                            borderColor: "transparent",
+                          },
+                    ]}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={es.moodEmoji}>{emojis[i]}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* ── Tags ── */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={es.tagsScroll}
+              contentContainerStyle={es.tagsContent}
+            >
+              {JOURNAL_TAGS.map((tag) => {
+                const selected = tags.includes(tag);
+                return (
+                  <TouchableOpacity
+                    key={tag}
+                    onPress={() =>
+                      setTags((p) =>
+                        p.includes(tag)
+                          ? p.filter((t) => t !== tag)
+                          : [...p, tag],
+                      )
+                    }
+                    style={[
+                      es.tagChip,
+                      selected
+                        ? {
+                            backgroundColor: colors.accentMuted,
+                            borderColor: colors.accent,
+                          }
+                        : {
+                            backgroundColor: colors.surfaceMuted,
+                            borderColor: colors.border,
+                          },
+                    ]}
+                    activeOpacity={0.75}
+                  >
+                    <Text
+                      style={[
+                        es.tagChipText,
+                        {
+                          color: selected
+                            ? colors.accent
+                            : colors.textSecondary,
+                        },
+                      ]}
+                    >
+                      #{tag}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            {/* ── AI Reflect banner (shown when insight is saved) ── */}
+            {entry?.insight?.followUpQuestion ? (
+              <View
+                style={[
+                  es.reflectBanner,
+                  {
+                    backgroundColor: colors.accentMuted,
+                    borderColor: colors.accent + "40",
+                  },
+                ]}
+              >
+                <View style={es.reflectHeader}>
+                  <Ionicons
+                    name="chatbubble-ellipses-outline"
+                    size={14}
+                    color={colors.accent}
+                  />
+                  <Text style={[es.reflectLabel, { color: colors.accent }]}>
+                    Reflect on this
+                  </Text>
+                </View>
+                <Text style={[es.reflectText, { color: colors.textPrimary }]}>
+                  {entry.insight.followUpQuestion}
+                </Text>
+              </View>
+            ) : null}
+
+            {/* ── Blocks ── */}
+            <View style={{ paddingHorizontal: 16 }}>
+              {blocks.map((block, idx) => (
+                <DraggableBlock
+                  key={idx}
+                  index={idx}
+                  onReorder={handleReorder}
+                  isDragging={isDragging}
+                  onDragStart={() => setIsDragging(true)}
+                  onDragEnd={() => setIsDragging(false)}
+                  blockHeight={200}
+                  onDelete={() => handleRemoveBlock(idx)}
+                  canDelete={blocks.length > 1}
+                >
+                  <View style={{ marginHorizontal: 0 }}>
+                    {renderBlock(block, idx)}
+                  </View>
+                </DraggableBlock>
+              ))}
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+
+        {/* ── FAB + Add block menu ── */}
+        <View style={es.fabContainer} pointerEvents="box-none">
+          <AddBlockMenu
+            visible={showAddMenu}
+            onAdd={handleAddBlock}
+            menuAnimation={menuAnimation}
+          />
+          <TouchableOpacity
+            style={[es.fab, { backgroundColor: colors.accent }]}
+            onPress={() => setShowAddMenu((p) => !p)}
+            activeOpacity={0.85}
+          >
+            <Animated.View
+              style={{
+                transform: [
+                  {
+                    rotate: menuAnimation.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ["0deg", "45deg"],
+                    }),
+                  },
+                ],
+              }}
+            >
+              <Ionicons name="add" size={28} color="#fff" />
+            </Animated.View>
+          </TouchableOpacity>
+        </View>
       </View>
-    </View>
+
+      {/* ── AI Insight modal (Pro only) ── */}
+      <JournalInsightModal
+        isVisible={showInsight}
+        loading={insightLoading}
+        insight={insight}
+        error={insightError}
+        isLimitError={insightIsLimit}
+        onDismiss={() => {
+          setShowInsight(false);
+          router.back();
+        }}
+      />
+    </>
   );
 }
 
@@ -1059,10 +1321,64 @@ const es = StyleSheet.create({
     fontSize: 22,
     fontFamily: "SoraBold",
     marginHorizontal: 20,
-    marginBottom: 16,
+    marginBottom: 12,
     paddingVertical: 12,
     borderBottomWidth: 1,
     letterSpacing: -0.3,
+  },
+
+  // Mood picker
+  moodRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginHorizontal: 20,
+    marginBottom: 12,
+  },
+  moodBtn: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1.5,
+  },
+  moodEmoji: { fontSize: 20 },
+
+  // Tags
+  tagsScroll: { marginBottom: 16 },
+  tagsContent: { paddingHorizontal: 20, gap: 8 },
+  tagChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  tagChipText: { fontSize: 12, fontFamily: "SoraSemiBold" },
+
+  // Reflect banner
+  reflectBanner: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+  },
+  reflectHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 6,
+  },
+  reflectLabel: {
+    fontSize: 11,
+    fontFamily: "SoraBold",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  reflectText: {
+    fontSize: 15,
+    fontFamily: "SoraMedium",
+    lineHeight: 23,
+    fontStyle: "italic",
   },
 
   // Block card (base for all block types)

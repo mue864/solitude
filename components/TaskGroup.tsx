@@ -34,6 +34,9 @@ export default function TaskGroup({
       <View style={s.header}>
         <View style={[s.labelDot, { backgroundColor: dotColor }]} />
         <Text style={[s.label, { color: colors.textSecondary }]}>{label}</Text>
+        <Text style={[s.count, { color: colors.textSecondary }]}>
+          {tasks.length}
+        </Text>
       </View>
       {tasks.map((task) => (
         <TaskCard
@@ -51,18 +54,27 @@ export default function TaskGroup({
 }
 
 const s = StyleSheet.create({
-  group: { marginBottom: 16 },
+  group: { marginBottom: 18 },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    marginBottom: 8,
+    gap: 8,
+    marginBottom: 10,
+    paddingHorizontal: 2,
   },
   labelDot: { width: 6, height: 6, borderRadius: 3 },
   label: {
+    flex: 1,
     fontSize: 11,
     fontFamily: "SoraSemiBold",
     textTransform: "uppercase",
     letterSpacing: 0.8,
+  },
+  count: {
+    fontSize: 11,
+    fontFamily: "SoraSemiBold",
+    opacity: 0.65,
+    minWidth: 16,
+    textAlign: "right",
   },
 });
