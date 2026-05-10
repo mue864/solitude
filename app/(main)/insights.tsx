@@ -191,6 +191,47 @@ export default function Insights() {
           </Text>
         </View>
 
+        {/* Review pills */}
+        <View style={s.reviewPillRow}>
+          {[
+            {
+              period: "weekly" as const,
+              label: "Weekly Review",
+              icon: "calendar-outline" as const,
+            },
+            {
+              period: "monthly" as const,
+              label: "Monthly Review",
+              icon: "calendar-clear-outline" as const,
+            },
+          ].map(({ period, label, icon }) => (
+            <TouchableOpacity
+              key={period}
+              activeOpacity={0.75}
+              style={[
+                s.reviewPill,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+              onPress={() =>
+                router.push({
+                  pathname: "/(screens)/periodReview",
+                  params: { period },
+                })
+              }
+            >
+              <Ionicons name={icon} size={13} color={colors.accent} />
+              <Text style={[s.reviewPillText, { color: colors.textPrimary }]}>
+                {label}
+              </Text>
+              <Ionicons
+                name="chevron-forward"
+                size={11}
+                color={colors.textSecondary}
+              />
+            </TouchableOpacity>
+          ))}
+        </View>
+
         {/* Score hero card */}
         <View
           style={[
@@ -786,6 +827,25 @@ const s = StyleSheet.create({
     marginTop: 4,
   },
   insightChipText: { fontSize: 13, fontFamily: "SoraSemiBold" },
+
+  // Period review pills
+  reviewPillRow: {
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 20,
+    marginBottom: 16,
+  },
+  reviewPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  reviewPillText: { fontSize: 13, fontFamily: "SoraSemiBold" },
+
   // ---- switch warning modal ----
   modalOverlay: {
     flex: 1,

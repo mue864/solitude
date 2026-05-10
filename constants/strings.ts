@@ -1,7 +1,7 @@
 const Strings = {
   // app name
   appName: "Solitude",
-  companyName: "Verdico",
+  companyName: "Sikavo",
 
   // welcome
   welcomeHeading: "Welcome To",

@@ -2,6 +2,7 @@ import { useTheme } from "@/context/ThemeContext";
 import { BUILTIN_FLOWS, useFlowStore } from "@/store/flowStore";
 import { useJournalStore } from "@/store/journalStore";
 import { useSessionStore, type SessionType } from "@/store/sessionState";
+import { useSettingsStore } from "@/store/settingsStore";
 import { useTaskStore } from "@/store/taskStore";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -161,6 +162,12 @@ export default function Focus() {
   );
   const completeSessionTask = useSessionStore((s) => s.completeSessionTask);
   const durationMinutes = Math.floor(duration / 60);
+
+  // ── Settings ──────────────────────────────────────────────────────────────
+  const autoStartNext = useSettingsStore((s) => s.autoStartNext);
+  const breakReminderEnabled = useSettingsStore(
+    (s) => s.notifications.breakReminder,
+  );
 
   // ── Task store ────────────────────────────────────────────────────────────
   const currentTaskId = useTaskStore((s) => s.currentTaskId);
@@ -417,7 +424,22 @@ export default function Focus() {
         durationSeconds: sessionInitialDuration,
         tasksCompleted: stagedCompletedCount,
       });
-      setShowSessionComplete(true);
+      // Schedule a break reminder ~2 min after a focus session ends (not for breaks)
+      const BREAK_TYPES = [
+        "Short Break",
+        "Long Break",
+        "Mindful Moment",
+        "Reset Session",
+      ];
+      if (breakReminderEnabled && !BREAK_TYPES.includes(sessionType)) {
+        notifications.scheduleBreakReminder(2 * 60);
+      }
+      if (autoStartNext) {
+        // Skip the completion modal and immediately restart the same session type
+        setTimeout(() => resumeSession(), 400);
+      } else {
+        setShowSessionComplete(true);
+      }
     }
     prevSessionId.current = currentSessionId;
     prevIsRunning.current = isRunning;

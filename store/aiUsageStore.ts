@@ -6,7 +6,7 @@ import { persist } from "zustand/middleware";
 // Entries that contain at least one audio block: max 5 AI insights per day.
 // All other entries (text / checkbox / list / image): uncapped for now —
 // revisit if spend grows.
-export const DAILY_AUDIO_INSIGHT_LIMIT = 10;
+export const DAILY_AUDIO_INSIGHT_LIMIT = 9999;
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 

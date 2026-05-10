@@ -74,13 +74,17 @@ const formatSecs = (s: number) =>
 function AudioBlock({
   block,
   idx,
+  entryId,
   onUpdate,
+  onRemove,
   isRecording,
   setRecordingIdx,
 }: {
   block: JournalBlock;
   idx: number;
+  entryId: string;
   onUpdate: (b: JournalBlock) => void;
+  onRemove: () => void;
   isRecording: boolean;
   setRecordingIdx: (i: number | null) => void;
 }) {
@@ -92,10 +96,24 @@ function AudioBlock({
   const [playbackPosition, setPlaybackPosition] = useState(0);
   const [audioDuration, setAudioDuration] = useState(0);
   const [audioTitle, setAudioTitle] = useState((block as any).title || "");
+  const enqueuePendingUpload = useJournalStore((s) => s.enqueuePendingUpload);
+  const enqueuePendingDeletion = useJournalStore(
+    (s) => s.enqueuePendingDeletion,
+  );
 
+  const recordingUnloaded = useRef(false);
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const waveAnim = useRef(new Animated.Value(0)).current;
-  const recordingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const BAR_COUNT = 14;
+  const barAnims = useRef(
+    Array.from({ length: 14 }, () => new Animated.Value(0)),
+  ).current;
+  const BAR_CONFIGS = useRef(
+    Array.from({ length: 14 }, (_, i) => ({
+      duration: 320 + ((i * 97 + 43) % 430),
+      minScale: 0.1 + ((i * 31 + 7) % 22) / 100,
+      maxScale: 0.55 + ((i * 53 + 17) % 45) / 100,
+    })),
+  ).current;
 
   useEffect(() => {
     if (isRecording) {
@@ -113,23 +131,29 @@ function AudioBlock({
           }),
         ]),
       );
-      const waveLoop = Animated.loop(
-        Animated.timing(waveAnim, {
-          toValue: 1,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
+      const barLoops = barAnims.map((anim, i) =>
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(anim, {
+              toValue: 1,
+              duration: BAR_CONFIGS[i].duration,
+              useNativeDriver: true,
+            }),
+            Animated.timing(anim, {
+              toValue: 0,
+              duration: BAR_CONFIGS[i].duration,
+              useNativeDriver: true,
+            }),
+          ]),
+        ),
       );
       pulseLoop.start();
-      waveLoop.start();
-      recordingTimer.current = setInterval(
-        () => setRecordingTime((p) => p + 1),
-        1000,
-      );
+      // stagger phase so bars don't start in sync
+      barAnims.forEach((anim, i) => anim.setValue(i % 2 === 0 ? 0 : 1));
+      barLoops.forEach((loop) => loop.start());
       return () => {
         pulseLoop.stop();
-        waveLoop.stop();
-        if (recordingTimer.current) clearInterval(recordingTimer.current);
+        barLoops.forEach((loop) => loop.stop());
       };
     }
   }, [isRecording]);
@@ -137,12 +161,13 @@ function AudioBlock({
   useEffect(() => {
     return () => {
       sound?.unloadAsync();
-      try {
-        recording?.stopAndUnloadAsync();
-      } catch {}
-      if (recordingTimer.current) clearInterval(recordingTimer.current);
+      if (!recordingUnloaded.current) {
+        try {
+          recording?.stopAndUnloadAsync();
+        } catch {}
+      }
     };
-  }, [sound, recording]);
+  }, []);
 
   if (block.type !== "audio") return null;
 
@@ -174,6 +199,7 @@ function AudioBlock({
       setRecording(rec);
       setRecordingIdx(idx);
       setRecordingTime(0);
+      recordingUnloaded.current = false;
     } catch {
       Alert.alert("Error", "Failed to start recording.");
       setRecording(null);
@@ -186,10 +212,6 @@ function AudioBlock({
       setRecordingIdx(null);
       return;
     }
-    if (recordingTimer.current) {
-      clearInterval(recordingTimer.current);
-      recordingTimer.current = null;
-    }
     setRecordingIdx(null);
     const finalTime = recordingTime;
     setRecordingTime(0);
@@ -197,7 +219,10 @@ function AudioBlock({
       let uri: string | null = null;
       try {
         const st = await recording.getStatusAsync();
-        if (st.isRecording) await recording.stopAndUnloadAsync();
+        if (st.isRecording) {
+          await recording.stopAndUnloadAsync();
+          recordingUnloaded.current = true;
+        }
         uri = recording.getURI();
       } catch {
         uri = recording.getURI();
@@ -216,7 +241,8 @@ function AudioBlock({
             onUpdate({ type: "audio", uri, duration: finalTime, title, url });
           })
           .catch(() => {
-            // Non-fatal: entry still saves, AI insight uses metadata fallback
+            // Offline — queue for retry when app returns to foreground
+            enqueuePendingUpload({ entryId, blockIdx: idx, uri, filename });
           });
       } else throw new Error("No URI");
     } catch {
@@ -247,6 +273,8 @@ function AudioBlock({
             if (st.didJustFinish) {
               setIsPlaying(false);
               setPlaybackPosition(0);
+              s.unloadAsync().catch(() => {});
+              setSound(null);
             }
           }
         });
@@ -271,8 +299,19 @@ function AudioBlock({
         text: "Delete",
         style: "destructive",
         onPress: async () => {
-          if (sound) await sound.unloadAsync();
-          onUpdate({ type: "audio", uri: "", duration: 0, title: "" });
+          if (sound) {
+            await sound.unloadAsync().catch(() => {});
+            setSound(null);
+          }
+          // Delete the file from MinIO if it was uploaded; queue if offline
+          const url = (block as any).url as string | undefined;
+          if (url) {
+            storageApi.deleteAudio(url).catch(() => {
+              enqueuePendingDeletion(url);
+            });
+          }
+          // Remove the block row entirely instead of leaving an empty shell
+          onRemove();
         },
       },
     ]);
@@ -383,18 +422,26 @@ function AudioBlock({
             </Text>
           </View>
           <View style={es.waveContainer}>
-            {Array.from({ length: 8 }).map((_, i) => (
+            {barAnims.map((anim, i) => (
               <Animated.View
                 key={i}
                 style={[
                   es.waveBar,
-                  { backgroundColor: colors.destructive + "99" },
+                  {
+                    backgroundColor:
+                      i % 2 === 0
+                        ? colors.destructive + "cc"
+                        : colors.destructive + "77",
+                  },
                   {
                     transform: [
                       {
-                        scaleY: waveAnim.interpolate({
+                        scaleY: anim.interpolate({
                           inputRange: [0, 1],
-                          outputRange: [0.2, 0.2 + ((i * 7) % 5) * 0.16],
+                          outputRange: [
+                            BAR_CONFIGS[i].minScale,
+                            BAR_CONFIGS[i].maxScale,
+                          ],
                         }),
                       },
                     ],
@@ -433,6 +480,29 @@ function AudioBlock({
             ]}
           >
             Tap to record
+          </Text>
+        </View>
+      )}
+
+      {/* Audio Insight card — appears after Gemini analyses the recording */}
+      {!!(block as any).audioInsight && (
+        <View
+          style={[
+            es.audioInsightCard,
+            {
+              backgroundColor: colors.accentMuted,
+              borderColor: colors.accent + "30",
+            },
+          ]}
+        >
+          <View style={es.audioInsightHeader}>
+            <Ionicons name="sparkles-outline" size={13} color={colors.accent} />
+            <Text style={[es.audioInsightLabel, { color: colors.accent }]}>
+              Audio Insight
+            </Text>
+          </View>
+          <Text style={[es.audioInsightText, { color: colors.textPrimary }]}>
+            {(block as any).audioInsight}
           </Text>
         </View>
       )}
@@ -665,6 +735,29 @@ export default function JournalEditor() {
           moodScore: data.moodScore,
           themes: data.themes,
         });
+
+        // If Gemini returned audio insight/transcript, persist them on the audio block
+        // so the insight card appears inline and re-analysis can skip re-uploading.
+        if (data.audioInsight || data.audioTranscript) {
+          let firstAudioUpdated = false;
+          const updatedBlocks = blocks.map((b) => {
+            if (!firstAudioUpdated && b.type === "audio" && !!(b as any).url) {
+              firstAudioUpdated = true;
+              return {
+                ...b,
+                ...(data.audioInsight
+                  ? { audioInsight: data.audioInsight }
+                  : {}),
+                ...(data.audioTranscript
+                  ? { audioTranscript: data.audioTranscript }
+                  : {}),
+              } as JournalBlock;
+            }
+            return b;
+          });
+          setBlocks(updatedBlocks);
+          editEntry(savedId, { blocks: updatedBlocks });
+        }
       } catch (err: any) {
         const status = err?.response?.status;
         if (status === 429) {
@@ -740,13 +833,18 @@ export default function JournalEditor() {
             LayoutAnimation.configureNext(
               LayoutAnimation.Presets.easeInEaseOut,
             );
-            setBlocks((p) => p.filter((_, i) => i !== idx));
+            const newBlocks = blocks.filter((_, i) => i !== idx);
+            setBlocks(newBlocks);
             if (recordingIdx === idx) setRecordingIdx(null);
+            // Persist immediately — don't wait for explicit Save
+            if (entry?.id) {
+              editEntry(entry.id, { blocks: newBlocks });
+            }
           },
         },
       ]);
     },
-    [recordingIdx],
+    [recordingIdx, blocks, entry, editEntry],
   );
 
   const handleUpdateBlock = useCallback((idx: number, block: JournalBlock) => {
@@ -1004,7 +1102,9 @@ export default function JournalEditor() {
           <AudioBlock
             block={block}
             idx={idx}
+            entryId={savedEntryIdRef.current ?? entry?.id ?? ""}
             onUpdate={(b) => handleUpdateBlock(idx, b)}
+            onRemove={() => handleRemoveBlock(idx)}
             isRecording={recordingIdx === idx}
             setRecordingIdx={setRecordingIdx}
           />
@@ -1516,6 +1616,26 @@ const es = StyleSheet.create({
     justifyContent: "center",
   },
   micHint: { fontSize: 12 },
+
+  // Audio insight card (shown after AI analysis)
+  audioInsightCard: {
+    marginTop: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 12,
+  },
+  audioInsightHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginBottom: 6,
+  },
+  audioInsightLabel: {
+    fontSize: 11,
+    fontFamily: "SoraSemiBold",
+    letterSpacing: 0.3,
+  },
+  audioInsightText: { fontSize: 13, fontFamily: "Sora", lineHeight: 20 },
 
   // Add block menu
   addMenu: {

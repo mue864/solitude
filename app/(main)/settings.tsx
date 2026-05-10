@@ -1,12 +1,12 @@
 import BottomSheet from "@/components/BottomSheet";
 import { useTheme } from "@/context/ThemeContext";
+import { useNotifications } from "@/hooks/useNotifications";
 import { useAuthStore } from "@/store/authStore";
 import { useSettingsStore } from "@/store/settingsStore";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
-  LayoutAnimation,
   ScrollView,
   StyleSheet,
   Switch,
@@ -46,7 +46,7 @@ export default function Settings() {
   const theme = useSettingsStore((s) => s.theme);
   const soundEnabled = useSettingsStore((s) => s.soundEnabled);
   const vibrationEnabled = useSettingsStore((s) => s.vibrationEnabled);
-  const isPro = useSettingsStore((s) => s.isPro);
+  const isPro = useAuthStore((s) => s.user?.isPro ?? false);
   const upgradeToPro = useSettingsStore((s) => s.upgradeToPro);
   const setProFromServer = useSettingsStore((s) => s.setProFromServer);
   const updateSessionDuration = useSettingsStore(
@@ -64,6 +64,15 @@ export default function Settings() {
   const authUser = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
 
+  const notificationsHook = useNotifications();
+
+  // Keep the daily streak reminder in sync with the toggle
+  useEffect(() => {
+    notificationsHook.scheduleDailyStreakReminder(
+      notifications.streakReminder ? "20:00" : null,
+    );
+  }, [notifications.streakReminder]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [proSheet, setProSheet] = useState(false);
   const [signOutSheet, setSignOutSheet] = useState(false);
   const [resetSheet, setResetSheet] = useState(false);
@@ -74,18 +83,6 @@ export default function Settings() {
   const toggleSection = (
     section: "sessions" | "notifications" | "appearance",
   ) => {
-    LayoutAnimation.configureNext({
-      duration: 220,
-      create: {
-        type: LayoutAnimation.Types.easeInEaseOut,
-        property: LayoutAnimation.Properties.opacity,
-      },
-      update: { type: LayoutAnimation.Types.easeInEaseOut },
-      delete: {
-        type: LayoutAnimation.Types.easeInEaseOut,
-        property: LayoutAnimation.Properties.opacity,
-      },
-    });
     setOpenSection((prev) => (prev === section ? null : section));
   };
 
@@ -219,24 +216,6 @@ export default function Settings() {
           colors={colors}
         >
           <ToggleRow
-            label="Session start"
-            value={notifications.sessionStart}
-            onToggle={() =>
-              updateNotifications({ sessionStart: !notifications.sessionStart })
-            }
-            colors={colors}
-          />
-          <View style={[s.divider, { backgroundColor: colors.border }]} />
-          <ToggleRow
-            label="Session end"
-            value={notifications.sessionEnd}
-            onToggle={() =>
-              updateNotifications({ sessionEnd: !notifications.sessionEnd })
-            }
-            colors={colors}
-          />
-          <View style={[s.divider, { backgroundColor: colors.border }]} />
-          <ToggleRow
             label="Break reminders"
             value={notifications.breakReminder}
             onToggle={() =>
@@ -262,7 +241,12 @@ export default function Settings() {
           <LockedRow
             label="Scheduled reminders"
             hint="Set custom times and days"
-            onPress={() => setProSheet(true)}
+            unlocked={isPro}
+            onPress={() =>
+              isPro
+                ? router.push("/(screens)/scheduledReminders" as any)
+                : setProSheet(true)
+            }
             colors={colors}
           />
         </Section>
@@ -339,6 +323,7 @@ export default function Settings() {
           <LockedRow
             label="Custom color themes"
             hint="Create your own look"
+            unlocked={isPro}
             onPress={() => setProSheet(true)}
             colors={colors}
           />
@@ -505,7 +490,7 @@ export default function Settings() {
         title="Sign Out"
       >
         <Text style={[s.proBody, { color: colors.textSecondary }]}>
-          You'll be signed out of your account. Your local data stays on this
+          You&apos;ll be signed out of your account. Your local data stays on this
           device, but Pro features will be restricted until you sign back in.
         </Text>
         <TouchableOpacity
@@ -592,6 +577,7 @@ function Section({
   children: React.ReactNode;
 }) {
   const progress = useSharedValue(open ? 1 : 0);
+  const measuredHeight = useSharedValue(0);
 
   useEffect(() => {
     progress.value = withTiming(open ? 1 : 0, {
@@ -604,6 +590,17 @@ function Section({
     transform: [
       { rotate: `${interpolate(progress.value, [0, 1], [0, 180])}deg` },
     ],
+  }));
+
+  const bodyStyle = useAnimatedStyle(() => ({
+    height:
+      measuredHeight.value === 0
+        ? open
+          ? undefined
+          : 0
+        : interpolate(progress.value, [0, 1], [0, measuredHeight.value]),
+    opacity: interpolate(progress.value, [0, 0.5], [0, 1]),
+    overflow: "hidden",
   }));
 
   return (
@@ -634,7 +631,20 @@ function Section({
           />
         </Animated.View>
       </TouchableOpacity>
-      {open && <View style={s.sectionBody}>{children}</View>}
+      {/* Ghost view — lays out at natural height so we can measure it */}
+      <View
+        style={{ position: "absolute", opacity: 0, pointerEvents: "none" }}
+        onLayout={(e) => {
+          const h = e.nativeEvent.layout.height;
+          if (h > 0) measuredHeight.value = h;
+        }}
+      >
+        <View style={s.sectionBody}>{children}</View>
+      </View>
+      {/* Animated wrapper clips to measured height */}
+      <Animated.View style={bodyStyle}>
+        <View style={s.sectionBody}>{children}</View>
+      </Animated.View>
     </View>
   );
 }
@@ -667,11 +677,13 @@ function ToggleRow({
 function LockedRow({
   label,
   hint,
+  unlocked,
   onPress,
   colors,
 }: {
   label: string;
   hint?: string;
+  unlocked?: boolean;
   onPress: () => void;
   colors: ReturnType<typeof useTheme>["colors"];
 }) {
@@ -682,7 +694,12 @@ function LockedRow({
       activeOpacity={0.75}
     >
       <View style={s.lockedLeft}>
-        <Text style={[s.rowLabel, { color: colors.textSecondary }]}>
+        <Text
+          style={[
+            s.rowLabel,
+            { color: unlocked ? colors.textPrimary : colors.textSecondary },
+          ]}
+        >
           {label}
         </Text>
         {hint && (
@@ -691,10 +708,18 @@ function LockedRow({
           </Text>
         )}
       </View>
-      <View style={[s.lockBadge, { backgroundColor: colors.surfaceMuted }]}>
-        <Ionicons name="lock-closed" size={11} color={colors.textSecondary} />
-        <Text style={[s.lockText, { color: colors.textSecondary }]}>Pro</Text>
-      </View>
+      {unlocked ? (
+        <Ionicons
+          name="chevron-forward"
+          size={16}
+          color={colors.textSecondary}
+        />
+      ) : (
+        <View style={[s.lockBadge, { backgroundColor: colors.surfaceMuted }]}>
+          <Ionicons name="lock-closed" size={11} color={colors.textSecondary} />
+          <Text style={[s.lockText, { color: colors.textSecondary }]}>Pro</Text>
+        </View>
+      )}
     </TouchableOpacity>
   );
 }

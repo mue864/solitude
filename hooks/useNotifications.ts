@@ -5,6 +5,7 @@ import notifee, {
   AndroidColor,
   AndroidImportance,
   EventType,
+  RepeatFrequency,
   TriggerType,
 } from "@notifee/react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -477,21 +478,6 @@ class NotificationService {
     });
   }
 
-  async scheduleBreakReminder(sessionDuration: number) {
-    await this.scheduleNotification(
-      {
-        id: "break-reminder",
-        title: "Time for a Break",
-        body: "Take a short break to recharge and stay productive.",
-        priority: "default",
-      },
-      {
-        type: TriggerType.TIMESTAMP,
-        timestamp: Date.now() + sessionDuration * 60 * 1000,
-      },
-    );
-  }
-
   async showStreakMilestoneNotification(streakCount: number) {
     const milestones = [7, 30, 100, 365];
     if (!milestones.includes(streakCount)) return;
@@ -609,6 +595,57 @@ class NotificationService {
     } catch (_) {}
     await this.cancelNotification("background-session");
   }
+
+  /**
+   * Schedules a break reminder to fire `delaySeconds` after now.
+   * Call right after a focus session completes.
+   */
+  async scheduleBreakReminder(delaySeconds: number) {
+    // Cancel any previous break reminder before scheduling a new one
+    await this.cancelNotification("break-reminder");
+    await this.scheduleNotification(
+      {
+        id: "break-reminder",
+        title: "Take a Break",
+        body: "You earned it. Step away, hydrate, and come back fresh.",
+        priority: "default",
+      },
+      {
+        type: TriggerType.TIMESTAMP,
+        timestamp: Date.now() + delaySeconds * 1000,
+      },
+    );
+  }
+
+  /**
+   * Schedules (or reschedules) a daily streak reminder at a specific HH:mm.
+   * Pass null to cancel it.
+   */
+  async scheduleDailyStreakReminder(time: string | null) {
+    await this.cancelNotification("streak-daily-reminder");
+    if (!time) return;
+
+    const [hours, minutes] = time.split(":").map(Number);
+    const now = new Date();
+    const next = new Date();
+    next.setHours(hours, minutes, 0, 0);
+    // If the time has already passed today, schedule for tomorrow
+    if (next <= now) next.setDate(next.getDate() + 1);
+
+    await this.scheduleNotification(
+      {
+        id: "streak-daily-reminder",
+        title: "Keep Your Streak Alive",
+        body: "Don't forget to complete a focus session today.",
+        priority: "high",
+      },
+      {
+        type: TriggerType.TIMESTAMP,
+        timestamp: next.getTime(),
+        repeatFrequency: RepeatFrequency.DAILY,
+      },
+    );
+  }
 }
 
 const notificationService = new NotificationService();
@@ -638,8 +675,6 @@ export const useNotifications = () => {
       notificationService.showSessionPauseNotification(),
     showSessionResumeNotification: () =>
       notificationService.showSessionResumeNotification(),
-    scheduleBreakReminder: (sessionDuration: number) =>
-      notificationService.scheduleBreakReminder(sessionDuration),
     showStreakMilestoneNotification: (streakCount: number) =>
       notificationService.showStreakMilestoneNotification(streakCount),
     scheduleTaskReminder: (task: any) =>
@@ -673,5 +708,9 @@ export const useNotifications = () => {
       ),
     cancelBackgroundSessionNotification: () =>
       notificationService.cancelBackgroundSessionNotification(),
+    scheduleBreakReminder: (delaySeconds: number) =>
+      notificationService.scheduleBreakReminder(delaySeconds),
+    scheduleDailyStreakReminder: (time: string | null) =>
+      notificationService.scheduleDailyStreakReminder(time),
   };
 };

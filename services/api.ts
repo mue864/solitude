@@ -114,11 +114,37 @@ export type JournalInsightResponse = {
   followUpQuestion: string;
   moodScore: number;
   themes: string[];
+  audioInsight: string | null;
+  audioTranscript: string | null;
+};
+
+export type ReviewEntryDto = {
+  date: string;
+  title: string;
+  mood?: number | null;
+  tags?: string[];
+  textContent: string;
+};
+
+export type ReviewRequest = {
+  period: "weekly" | "monthly";
+  entries: ReviewEntryDto[];
+};
+
+export type ReviewResponse = {
+  period: string;
+  overallSummary: string;
+  moodTrend: string | null;
+  recurringThemes: string[];
+  patternObservation: string | null;
+  suggestedFocus: string | null;
 };
 
 export const aiApi = {
   getJournalInsight: (body: JournalInsightRequest) =>
     api.post<JournalInsightResponse>("/ai/journal-insight", body),
+  generateReview: (body: ReviewRequest) =>
+    api.post<ReviewResponse>("/ai/review", body),
 };
 
 // ─── Storage ─────────────────────────────────────────────────────────────────
@@ -150,5 +176,9 @@ export const storageApi = {
       timeout: 30000, // audio uploads may take longer
     });
     return response.data;
+  },
+
+  deleteAudio: async (url: string): Promise<void> => {
+    await api.delete("/files/audio", { data: { url } });
   },
 };

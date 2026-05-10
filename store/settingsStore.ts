@@ -1,11 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { SESSION_TYPES, useSessionStore } from "./sessionState";
 
 // Types for settings
 export interface NotificationSettings {
-  sessionStart: boolean;
-  sessionEnd: boolean;
   breakReminder: boolean;
   dailySummary: boolean;
   weeklySummary: boolean;
@@ -98,8 +97,6 @@ const defaultSettings = {
   breakDuration: 5,
   autoStartNext: false,
   notifications: {
-    sessionStart: true,
-    sessionEnd: true,
     breakReminder: true,
     dailySummary: false,
     weeklySummary: false,
@@ -159,10 +156,21 @@ export const useSettingsStore = create<SettingsState>()(
       // Free tier actions
       updateSessionDuration: (duration: number) => {
         set({ defaultSessionDuration: duration });
+        SESSION_TYPES["Classic"] = duration * 60;
+        // Reflect immediately in the focus UI when no session is running
+        const ss = useSessionStore.getState();
+        if (!ss.isRunning && !ss.isPaused && ss.sessionType === "Classic") {
+          ss.setDuration(duration * 60);
+        }
       },
 
       updateBreakDuration: (duration: number) => {
         set({ breakDuration: duration });
+        SESSION_TYPES["Short Break"] = duration * 60;
+        const ss = useSessionStore.getState();
+        if (!ss.isRunning && !ss.isPaused && ss.sessionType === "Short Break") {
+          ss.setDuration(duration * 60);
+        }
       },
 
       toggleAutoStart: () => {
@@ -440,6 +448,16 @@ export const useSettingsStore = create<SettingsState>()(
         removeItem: async (name: string) => {
           await AsyncStorage.removeItem(name);
         },
+      },
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        // Apply persisted durations to SESSION_TYPES so the focus tab is in sync on startup
+        if (state.defaultSessionDuration) {
+          SESSION_TYPES["Classic"] = state.defaultSessionDuration * 60;
+        }
+        if (state.breakDuration) {
+          SESSION_TYPES["Short Break"] = state.breakDuration * 60;
+        }
       },
     },
   ),

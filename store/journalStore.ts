@@ -24,6 +24,10 @@ export type JournalBlock =
       duration: number;
       title?: string;
       url?: string;
+      /** AI emotional/tonal observation — shown inline under the audio block. */
+      audioInsight?: string;
+      /** Verbatim transcript — cached to skip re-uploading audio on re-analysis. */
+      audioTranscript?: string;
     };
 
 export type JournalMood = 1 | 2 | 3 | 4 | 5;
@@ -86,6 +90,23 @@ interface JournalStore {
   deleteEntry: (id: string) => void;
   saveInsight: (id: string, insight: JournalInsight) => void;
   getEntries: () => JournalEntry[];
+  // Offline queue
+  pendingUploads: Array<{
+    entryId: string;
+    blockIdx: number;
+    uri: string;
+    filename: string;
+  }>;
+  pendingDeletions: Array<{ url: string }>;
+  enqueuePendingUpload: (item: {
+    entryId: string;
+    blockIdx: number;
+    uri: string;
+    filename: string;
+  }) => void;
+  enqueuePendingDeletion: (url: string) => void;
+  removePendingUpload: (entryId: string, blockIdx: number) => void;
+  removePendingDeletion: (url: string) => void;
 }
 
 function migrateLegacyEntries(entries: any[]): JournalEntry[] {
@@ -181,6 +202,39 @@ export const useJournalStore = create<JournalStore>()(
       },
       getEntries: () => {
         return get().entries;
+      },
+      // Offline queues
+      pendingUploads: [],
+      pendingDeletions: [],
+      enqueuePendingUpload: (item) => {
+        set((state) => ({
+          pendingUploads: [
+            ...state.pendingUploads.filter(
+              (p) =>
+                !(p.entryId === item.entryId && p.blockIdx === item.blockIdx),
+            ),
+            item,
+          ],
+        }));
+      },
+      enqueuePendingDeletion: (url) => {
+        set((state) => ({
+          pendingDeletions: state.pendingDeletions.some((d) => d.url === url)
+            ? state.pendingDeletions
+            : [...state.pendingDeletions, { url }],
+        }));
+      },
+      removePendingUpload: (entryId, blockIdx) => {
+        set((state) => ({
+          pendingUploads: state.pendingUploads.filter(
+            (p) => !(p.entryId === entryId && p.blockIdx === blockIdx),
+          ),
+        }));
+      },
+      removePendingDeletion: (url) => {
+        set((state) => ({
+          pendingDeletions: state.pendingDeletions.filter((d) => d.url !== url),
+        }));
       },
     }),
     {

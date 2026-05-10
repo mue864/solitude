@@ -2,6 +2,7 @@ import WarningToast from "@/components/modals/WarningToast";
 import ReflectionSaveToast from "@/components/ReflectionSaveToast";
 import UndoToast from "@/components/undoToast";
 import { ThemeProvider, useTheme } from "@/context/ThemeContext";
+import { useAudioSync } from "@/hooks/useAudioSync";
 import { useAuthStore } from "@/store/authStore";
 import { useSessionStore } from "@/store/sessionState";
 import notifee, { AndroidImportance, EventType } from "@notifee/react-native";
@@ -87,6 +88,7 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
 });
 
 export default function RootLayout() {
+  useAudioSync();
   const [fontsLoaded] = useFonts({
     Sora: require("@/assets/fonts/Sora.ttf"),
     SoraBold: require("@/assets/fonts/Sora-Bold.ttf"),
