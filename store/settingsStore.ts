@@ -40,6 +40,9 @@ export interface ProFeatures {
   customFontSize: "small" | "medium" | "large";
 }
 
+/** ID of the currently active color theme (built-in or user-created). */
+export type ActiveThemeId = string;
+
 export interface SettingsState {
   // Free tier settings
   defaultSessionDuration: number; // in minutes
@@ -49,9 +52,13 @@ export interface SettingsState {
   theme: "light" | "dark" | "auto";
   soundEnabled: boolean;
   vibrationEnabled: boolean;
+  strictMode: boolean;
 
   // Pro tier settings
   proFeatures: ProFeatures;
+
+  // Active accent theme (Pro-only for non-default values)
+  activeThemeId: string;
 
   // Pro status
   isPro: boolean;
@@ -64,6 +71,7 @@ export interface SettingsState {
   updateTheme: (theme: "light" | "dark" | "auto") => void;
   toggleSound: () => void;
   toggleVibration: () => void;
+  toggleStrictMode: () => void;
 
   // Pro actions
   upgradeToPro: () => void;
@@ -79,6 +87,7 @@ export interface SettingsState {
   addCustomTheme: (theme: CustomTheme) => void;
   updateCustomTheme: (id: string, theme: Partial<CustomTheme>) => void;
   removeCustomTheme: (id: string) => void;
+  setActiveTheme: (id: string) => void;
   toggleAdvancedAnalytics: () => void;
   toggleDataBackup: () => void;
   toggleHapticFeedback: () => void;
@@ -105,6 +114,7 @@ const defaultSettings = {
   theme: "dark" as const,
   soundEnabled: true,
   vibrationEnabled: true,
+  strictMode: false,
   proFeatures: {
     customDurations: [15, 45, 60, 90],
     notificationSchedules: [],
@@ -146,6 +156,7 @@ const defaultSettings = {
     customFontSize: "medium" as const,
   },
   isPro: false, // Reverted back to false
+  activeThemeId: "solitude",
 };
 
 export const useSettingsStore = create<SettingsState>()(
@@ -193,6 +204,10 @@ export const useSettingsStore = create<SettingsState>()(
 
       toggleVibration: () => {
         set((state) => ({ vibrationEnabled: !state.vibrationEnabled }));
+      },
+
+      toggleStrictMode: () => {
+        set((state) => ({ strictMode: !state.strictMode }));
       },
 
       // Pro tier actions
@@ -302,6 +317,12 @@ export const useSettingsStore = create<SettingsState>()(
             ),
           },
         }));
+      },
+
+      setActiveTheme: (id: string) => {
+        // Free users can only use the default solitude amber
+        if (id !== "solitude" && !get().isPro) return;
+        set({ activeThemeId: id });
       },
 
       toggleAdvancedAnalytics: () => {

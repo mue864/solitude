@@ -1,6 +1,7 @@
 import BottomSheet from "@/components/BottomSheet";
 import { useTheme } from "@/context/ThemeContext";
 import { JournalMood, JournalSessionContext } from "@/store/journalStore";
+import { Angry, Frown, Meh, Smile, Zap } from "lucide-react-native";
 import React, { useState } from "react";
 import {
   StyleSheet,
@@ -10,12 +11,16 @@ import {
   View,
 } from "react-native";
 
-const MOODS: { value: JournalMood; emoji: string; label: string }[] = [
-  { value: 1, emoji: "😩", label: "Drained" },
-  { value: 2, emoji: "😕", label: "Low" },
-  { value: 3, emoji: "😐", label: "Okay" },
-  { value: 4, emoji: "🙂", label: "Good" },
-  { value: 5, emoji: "🔥", label: "In zone" },
+const MOODS: {
+  value: JournalMood;
+  Icon: React.ComponentType<{ size: number; color: string }>;
+  label: string;
+}[] = [
+  { value: 1, Icon: Angry, label: "Drained" },
+  { value: 2, Icon: Frown, label: "Low" },
+  { value: 3, Icon: Meh, label: "Okay" },
+  { value: 4, Icon: Smile, label: "Good" },
+  { value: 5, Icon: Zap, label: "In zone" },
 ];
 
 function formatDuration(seconds: number) {
@@ -118,7 +123,10 @@ export default function AddJournalModal({
             ]}
             activeOpacity={0.75}
           >
-            <Text style={styles.moodEmoji}>{m.emoji}</Text>
+            <m.Icon
+              size={20}
+              color={mood === m.value ? colors.accent : colors.textSecondary}
+            />
             <Text
               style={[
                 styles.moodBtnLabel,
@@ -230,7 +238,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     gap: 2,
   },
-  moodEmoji: { fontSize: 18 },
+  moodIcon: { marginBottom: 1 },
   moodBtnLabel: { fontSize: 9, fontFamily: "SoraSemiBold" },
   input: {
     width: "100%",

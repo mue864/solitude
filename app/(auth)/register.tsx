@@ -1,5 +1,6 @@
 import { useTheme } from "@/context/ThemeContext";
 import { authApi } from "@/services/api";
+import { revenuecatService } from "@/services/revenuecatService";
 import { useAuthStore } from "@/store/authStore";
 import { useSettingsStore } from "@/store/settingsStore";
 import { router } from "expo-router";
@@ -51,6 +52,11 @@ export default function RegisterScreen() {
       const { accessToken, user } = res.data;
       await setAuth(accessToken, user);
       setProFromServer(user.isPro ?? false);
+      try {
+        await revenuecatService.logIn(user.id);
+      } catch {
+        // Non-fatal: entitlement sync can happen later.
+      }
       router.replace("/(main)/focus");
     } catch (e: any) {
       const msg = e?.response?.data?.message ?? e?.response?.data ?? null;

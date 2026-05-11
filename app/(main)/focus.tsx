@@ -6,6 +6,7 @@ import { useSettingsStore } from "@/store/settingsStore";
 import { useTaskStore } from "@/store/taskStore";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Audio } from "expo-av";
 import { useRouter } from "expo-router";
 import React, {
   useCallback,
@@ -28,6 +29,7 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withDelay,
+  withRepeat,
   withSequence,
   withSpring,
   withTiming,
@@ -46,7 +48,10 @@ import QuoteCard from "@/components/modals/QuoteCard";
 import SessionCompletionModal from "@/components/modals/SessionCompletionModal";
 import SessionIntelligenceModal from "@/components/modals/SessionIntelligenceModal";
 import SessionTaskPickerModal from "@/components/modals/SessionTaskPickerModal";
+import FocusSoundSheet from "@/components/modals/FocusSoundSheet";
 import { useNotifications } from "@/hooks/useNotifications";
+import { focusAudioService } from "@/services/focusAudioService";
+import { useFocusAudioStore } from "@/store/focusAudioStore";
 
 // ---------------------------------------------------------------------------
 // Session metadata
@@ -109,6 +114,144 @@ function taskTagColor(tag: string | null | undefined): string {
 }
 
 // ---------------------------------------------------------------------------
+// Sound playing indicator
+// ---------------------------------------------------------------------------
+function SoundBars({
+  isRunning,
+  color,
+}: {
+  isRunning: boolean;
+  color: string;
+}) {
+  const h1 = useSharedValue(8);
+  const h2 = useSharedValue(20);
+  const h3 = useSharedValue(12);
+  const h4 = useSharedValue(24);
+  const h5 = useSharedValue(6);
+
+  useEffect(() => {
+    if (isRunning) {
+      h1.value = withRepeat(
+        withSequence(
+          withTiming(14, { duration: 460 }),
+          withTiming(4, { duration: 460 }),
+        ),
+        -1,
+        true,
+      );
+      h2.value = withRepeat(
+        withSequence(
+          withTiming(26, { duration: 310 }),
+          withTiming(4, { duration: 310 }),
+        ),
+        -1,
+        true,
+      );
+      h3.value = withRepeat(
+        withSequence(
+          withTiming(18, { duration: 380 }),
+          withTiming(4, { duration: 380 }),
+        ),
+        -1,
+        true,
+      );
+      h4.value = withRepeat(
+        withSequence(
+          withTiming(22, { duration: 340 }),
+          withTiming(4, { duration: 340 }),
+        ),
+        -1,
+        true,
+      );
+      h5.value = withRepeat(
+        withSequence(
+          withTiming(12, { duration: 500 }),
+          withTiming(4, { duration: 500 }),
+        ),
+        -1,
+        true,
+      );
+    } else {
+      h1.value = withTiming(4, { duration: 350 });
+      h2.value = withTiming(4, { duration: 350 });
+      h3.value = withTiming(4, { duration: 350 });
+      h4.value = withTiming(4, { duration: 350 });
+      h5.value = withTiming(4, { duration: 350 });
+    }
+  }, [isRunning]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const s1 = useAnimatedStyle(() => ({ height: h1.value }));
+  const s2 = useAnimatedStyle(() => ({ height: h2.value }));
+  const s3 = useAnimatedStyle(() => ({ height: h3.value }));
+  const s4 = useAnimatedStyle(() => ({ height: h4.value }));
+  const s5 = useAnimatedStyle(() => ({ height: h5.value }));
+
+  const bar = { width: 3, borderRadius: 2, backgroundColor: color };
+
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "flex-end",
+        gap: 4,
+        height: 30,
+      }}
+    >
+      <Animated.View style={[bar, s1]} />
+      <Animated.View style={[bar, s2]} />
+      <Animated.View style={[bar, s3]} />
+      <Animated.View style={[bar, s4]} />
+      <Animated.View style={[bar, s5]} />
+    </View>
+  );
+}
+
+function SoundPlayingIndicator({
+  trackName,
+  category,
+  isRunning,
+  colors,
+}: {
+  trackName: string;
+  category?: string;
+  isRunning: boolean;
+  colors: ReturnType<
+    typeof import("@/context/ThemeContext").useTheme
+  >["colors"];
+}) {
+  return (
+    <View style={{ alignItems: "center", marginBottom: 30, gap: 10 }}>
+      <SoundBars isRunning={isRunning} color={colors.accent} />
+      <Text
+        style={{
+          fontSize: 15,
+          fontFamily: "SoraSemiBold",
+          color: colors.textPrimary,
+          letterSpacing: 0.2,
+        }}
+      >
+        {trackName}
+      </Text>
+      {category && (
+        <Text
+          style={{
+            fontSize: 10,
+            fontFamily: "Sora",
+            color: colors.textSecondary,
+            letterSpacing: 1.2,
+            textTransform: "uppercase",
+            opacity: 0.6,
+            marginTop: -4,
+          }}
+        >
+          {category}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Focus screen
 // ---------------------------------------------------------------------------
 export default function Focus() {
@@ -122,6 +265,7 @@ export default function Focus() {
   const [isSessionTypeModalVisible, setIsSessionTypeModalVisible] =
     useState(false);
   const [isFlowModalVisible, setIsFlowModalVisible] = useState(false);
+  const [isSoundSheetVisible, setIsSoundSheetVisible] = useState(false);
   const [isTimeModalVisible, setIsTimeModalVisible] = useState(false);
   const [showQuoteModal, setShowQuoteModal] = useState(false);
   const [showSessionComplete, setShowSessionComplete] = useState(false);
@@ -168,6 +312,10 @@ export default function Focus() {
   const breakReminderEnabled = useSettingsStore(
     (s) => s.notifications.breakReminder,
   );
+  const soundEnabled = useSettingsStore((s) => s.soundEnabled);
+  const isPro = useSettingsStore((s) => s.isPro);
+  const strictMode = useSettingsStore((s) => s.strictMode);
+  const vibrationEnabled = useSettingsStore((s) => s.vibrationEnabled);
 
   // ── Task store ────────────────────────────────────────────────────────────
   const currentTaskId = useTaskStore((s) => s.currentTaskId);
@@ -195,6 +343,10 @@ export default function Focus() {
 
   // ── Journal store ─────────────────────────────────────────────────────────
   const addJournalEntry = useJournalStore((s) => s.addEntry);
+  const focusAudioCatalog = useFocusAudioStore((s) => s.catalog);
+  const focusAudioCache = useFocusAudioStore((s) => s.cache);
+  const preferredTrackId = useFocusAudioStore((s) => s.preferredTrackId);
+  const setPreferredTrackId = useFocusAudioStore((s) => s.setPreferredTrackId);
 
   // ── Flow store (for progress bar) ─────────────────────────────────────────
   const customFlows = useFlowStore((s) => s.customFlows);
@@ -214,6 +366,7 @@ export default function Focus() {
   const quoteHalfwayShown = useRef(false);
   const prevSessionId = useRef(currentSessionId);
   const prevIsRunning = useRef(isRunning);
+  const focusSoundRef = useRef<Audio.Sound | null>(null);
 
   // ── Animations ────────────────────────────────────────────────────────────
   const isActive = isRunning || isPaused;
@@ -304,6 +457,27 @@ export default function Focus() {
     );
   }, [sessionType]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const soundIndicatorStyle = useAnimatedStyle(() => ({
+    opacity: activeOpacity.value,
+  }));
+
+  const shakeX = useSharedValue(0);
+  const shakeStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: shakeX.value }],
+  }));
+
+  const handleStrictModeTap = () => {
+    shakeX.value = withSequence(
+      withTiming(-10, { duration: 50 }),
+      withTiming(10, { duration: 50 }),
+      withTiming(-8, { duration: 50 }),
+      withTiming(8, { duration: 50 }),
+      withTiming(-4, { duration: 50 }),
+      withTiming(0, { duration: 50 }),
+    );
+    if (vibrationEnabled) Vibration.vibrate([0, 40, 30, 40]);
+  };
+
   const idleStyle = useAnimatedStyle(() => ({
     opacity: idleOpacity.value,
     transform: [{ translateY: idleTranslateY.value }],
@@ -350,6 +524,76 @@ export default function Focus() {
   const handleQuoteModalClose = useCallback(() => setShowQuoteModal(false), []);
 
   // ── Notifications ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+
+    const hydrateFocusAudio = async () => {
+      const catalog = await focusAudioService.syncCatalog();
+      if (cancelled) return;
+
+      const selectedTrackId = preferredTrackId || catalog[0]?.id || null;
+      if (selectedTrackId && !preferredTrackId) {
+        setPreferredTrackId(selectedTrackId);
+      }
+      if (!selectedTrackId) return;
+
+      await focusAudioService.ensureTrackDownloaded(selectedTrackId);
+    };
+
+    hydrateFocusAudio();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [preferredTrackId, setPreferredTrackId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const stopFocusTrack = async () => {
+      if (focusSoundRef.current) {
+        try {
+          await focusSoundRef.current.unloadAsync();
+        } catch {}
+        focusSoundRef.current = null;
+      }
+    };
+
+    const maybePlayFocusTrack = async () => {
+      if (!isRunning || isPaused || !soundEnabled || !preferredTrackId) {
+        await stopFocusTrack();
+        return;
+      }
+
+      const localUri = await focusAudioService.getPlayableUri(preferredTrackId);
+      if (cancelled || !localUri) {
+        return;
+      }
+
+      try {
+        await stopFocusTrack();
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: localUri },
+          { isLooping: true, shouldPlay: true, volume: 0.5 },
+        );
+        if (cancelled) {
+          await sound.unloadAsync();
+          return;
+        }
+        focusSoundRef.current = sound;
+      } catch {
+        // Ignore playback failures and leave ambient audio disabled for this run.
+      }
+    };
+
+    maybePlayFocusTrack();
+
+    return () => {
+      cancelled = true;
+      void stopFocusTrack();
+    };
+  }, [isRunning, isPaused, soundEnabled, preferredTrackId]);
+
   useEffect(() => {
     const init = async () => {
       try {
@@ -498,6 +742,17 @@ export default function Focus() {
     setIsFlowModalVisible(false);
   };
 
+  const handleSelectFocusTrack = (trackId: string) => {
+    setPreferredTrackId(trackId);
+    setIsSoundSheetVisible(false);
+    void focusAudioService.ensureTrackDownloaded(trackId);
+  };
+
+  const handleSelectNoSound = () => {
+    setPreferredTrackId(null);
+    setIsSoundSheetVisible(false);
+  };
+
   const handleCreateFlow = () => {
     setIsFlowModalVisible(false);
     setTimeout(() => router.push("/create-flow"), 100);
@@ -523,6 +778,14 @@ export default function Focus() {
   const bgColor = isActive
     ? getSessionBg(sessionType, isDarkMode)
     : colors.background;
+  const selectedTrackCacheStatus = preferredTrackId
+    ? focusAudioCache[preferredTrackId]?.status
+    : null;
+  const hasSelectedFocusTrack = Boolean(preferredTrackId);
+  const isSelectedTrackReady = selectedTrackCacheStatus === "ready";
+  const selectedTrack = preferredTrackId
+    ? focusAudioCatalog.find((t) => t.id === preferredTrackId)
+    : null;
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -561,24 +824,69 @@ export default function Focus() {
             {currentStreak}d streak
           </Text>
         </View>
-        <TouchableOpacity
-          onPress={() => setIsFlowModalVisible(true)}
-          style={[
-            styles.flowsChip,
-            {
-              backgroundColor: colors.accentMuted,
-              borderColor: colors.accent + "60",
-            },
-          ]}
-        >
-          <Text style={[styles.flowsChipText, { color: colors.accent }]}>
-            Flows
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            onPress={() => setIsSoundSheetVisible(true)}
+            style={[
+              styles.soundChip,
+              {
+                backgroundColor: colors.surfaceMuted,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <Ionicons
+              name="headset-outline"
+              size={14}
+              color={
+                hasSelectedFocusTrack && soundEnabled
+                  ? colors.accent
+                  : colors.textSecondary
+              }
+            />
+            {hasSelectedFocusTrack && (
+              <View
+                style={[
+                  styles.soundChipBadge,
+                  {
+                    backgroundColor: isSelectedTrackReady
+                      ? colors.accent
+                      : "#E8A43A",
+                  },
+                ]}
+              />
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setIsFlowModalVisible(true)}
+            style={[
+              styles.flowsChip,
+              {
+                backgroundColor: colors.accentMuted,
+                borderColor: colors.accent + "60",
+              },
+            ]}
+          >
+            <Text style={[styles.flowsChipText, { color: colors.accent }]}>
+              Flows
+            </Text>
+          </TouchableOpacity>
+        </View>
       </Animated.View>
 
       {/* Timer */}
       <Animated.View style={[styles.timerArea, timerAreaStyle]}>
+        {/* Sound playing indicator — active sessions only */}
+        {isActive && selectedTrack && soundEnabled && (
+          <Animated.View style={soundIndicatorStyle} pointerEvents="none">
+            <SoundPlayingIndicator
+              trackName={selectedTrack.name}
+              category={selectedTrack.category}
+              isRunning={isRunning}
+              colors={colors}
+            />
+          </Animated.View>
+        )}
         <TouchableOpacity
           onPress={() =>
             !isRunning && !isPaused ? setIsSessionTypeModalVisible(true) : null
@@ -816,43 +1124,72 @@ export default function Focus() {
           style={[styles.controls, styles.activeControls, activeControlStyle]}
           pointerEvents={!isActive ? "none" : "auto"}
         >
-          <View style={styles.activeBtnRow}>
+          <Animated.View style={[styles.activeBtnRow, shakeStyle]}>
             <TouchableOpacity
-              onPress={isPaused ? handleSessionStart : pauseSession}
+              onPress={
+                strictMode
+                  ? handleStrictModeTap
+                  : isPaused
+                    ? handleSessionStart
+                    : pauseSession
+              }
               style={[
                 styles.activeBtn,
                 styles.activeBtnPrimary,
-                { backgroundColor: colors.accent },
+                {
+                  backgroundColor:
+                    strictMode && !isPaused
+                      ? colors.surfaceMuted
+                      : colors.accent,
+                },
               ]}
             >
               <Ionicons
-                name={isPaused ? "play" : "pause"}
+                name={
+                  strictMode && !isPaused
+                    ? "lock-closed"
+                    : isPaused
+                      ? "play"
+                      : "pause"
+                }
                 size={20}
-                color="#fff"
+                color={strictMode && !isPaused ? colors.textSecondary : "#fff"}
               />
-              <Text style={styles.activeBtnLabel}>
-                {isPaused ? "Resume" : "Pause"}
+              <Text
+                style={[
+                  styles.activeBtnLabel,
+                  strictMode && !isPaused && { color: colors.textSecondary },
+                ]}
+              >
+                {isPaused ? "Resume" : strictMode ? "Locked" : "Pause"}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={handleSessionEnd}
+              onPress={strictMode ? handleStrictModeTap : handleSessionEnd}
               style={[
                 styles.activeBtn,
                 {
                   backgroundColor: colors.surfaceMuted,
-                  borderColor: colors.border,
+                  borderColor: strictMode
+                    ? colors.border + "40"
+                    : colors.border,
                   borderWidth: 1,
+                  opacity: strictMode ? 0.45 : 1,
                 },
               ]}
             >
-              <Ionicons name="stop" size={20} color={colors.textSecondary} />
+              <Ionicons
+                name={strictMode ? "lock-closed-outline" : "stop"}
+                size={20}
+                color={colors.textSecondary}
+              />
               <Text
                 style={[styles.activeBtnMuted, { color: colors.textSecondary }]}
               >
                 Stop
               </Text>
             </TouchableOpacity>
-          </View>
+          </Animated.View>
 
           {currentTask && (
             <View
@@ -1087,6 +1424,21 @@ export default function Focus() {
         onClose={() => setShowInsights(false)}
         onSelectSession={() => setShowInsights(false)}
       />
+      <FocusSoundSheet
+        visible={isSoundSheetVisible}
+        onClose={() => setIsSoundSheetVisible(false)}
+        tracks={focusAudioCatalog}
+        preferredTrackId={preferredTrackId}
+        cache={focusAudioCache}
+        soundEnabled={soundEnabled}
+        isPro={isPro}
+        onSelectTrack={handleSelectFocusTrack}
+        onSelectNone={handleSelectNoSound}
+        onUpgrade={() => {
+          setIsSoundSheetVisible(false);
+          router.push("/(screens)/paywall");
+        }}
+      />
     </View>
   );
 }
@@ -1121,6 +1473,27 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 20,
     borderWidth: StyleSheet.hairlineWidth,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  soundChip: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  soundChipBadge: {
+    position: "absolute",
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    right: 7,
+    top: 7,
   },
   flowsChipText: {
     fontSize: 12,

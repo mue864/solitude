@@ -682,7 +682,7 @@ function StatChip({
 const s = StyleSheet.create({
   screen: { flex: 1 },
   scrollContent: { paddingBottom: 180 },
-  header: { paddingHorizontal: 24, paddingTop: 56, paddingBottom: 16 },
+  header: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 16 },
   title: { fontSize: 24, fontFamily: "SoraBold", letterSpacing: -0.3 },
   subtitle: { fontSize: 14, fontFamily: "Sora", marginTop: 4 },
 

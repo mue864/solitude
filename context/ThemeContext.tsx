@@ -1,5 +1,13 @@
+import { BUILTIN_THEMES } from "@/constants/themes";
 import { useSettingsStore } from "@/store/settingsStore";
-import React, { createContext, useContext, useEffect, useState } from "react";
+import { deriveAccentTokens } from "@/utils/colorUtils";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { Appearance } from "react-native";
 
 // ---------------------------------------------------------------------------
@@ -73,6 +81,9 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const theme = useSettingsStore((s) => s.theme);
   const updateTheme = useSettingsStore((s) => s.updateTheme);
+  const activeThemeId = useSettingsStore((s) => s.activeThemeId);
+  const customThemes = useSettingsStore((s) => s.proFeatures.customThemes);
+  const isPro = useSettingsStore((s) => s.isPro);
 
   const [isDarkMode, setIsDarkMode] = useState(() => resolveIsDark(theme));
 
@@ -94,7 +105,20 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const toggleTheme = () => updateTheme(isDarkMode ? "light" : "dark");
 
-  const colors: ColorTokens = isDarkMode ? darkColors : lightColors;
+  // Resolve the accent hex for the currently active theme
+  const activeAccentHex = useMemo(() => {
+    if (!isPro || activeThemeId === "solitude") return null;
+    const builtin = BUILTIN_THEMES.find((t) => t.id === activeThemeId);
+    if (builtin) return builtin.accentColor;
+    const custom = customThemes.find((t) => t.id === activeThemeId);
+    return custom?.accentColor ?? null;
+  }, [isPro, activeThemeId, customThemes]);
+
+  const colors: ColorTokens = useMemo(() => {
+    const base = isDarkMode ? darkColors : lightColors;
+    if (!activeAccentHex) return base;
+    return { ...base, ...deriveAccentTokens(activeAccentHex) } as ColorTokens;
+  }, [isDarkMode, activeAccentHex]);
 
   return (
     <ThemeContext.Provider

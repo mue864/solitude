@@ -1,6 +1,11 @@
 import { useTheme } from "@/context/ThemeContext";
-import { aiApi, type ReviewResponse } from "@/services/api";
+import {
+  aiApi,
+  type ActivitySummaryDto,
+  type ReviewResponse,
+} from "@/services/api";
 import { useJournalStore, type JournalBlock } from "@/store/journalStore";
+import { useSessionIntelligence } from "@/store/sessionIntelligence";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
@@ -34,6 +39,7 @@ export default function PeriodReview() {
   const period: Period = rawPeriod === "monthly" ? "monthly" : "weekly";
 
   const entries = useJournalStore((s) => s.entries);
+  const { sessionRecords, userStats } = useSessionIntelligence();
 
   const periodEntries = useMemo(() => {
     const now = new Date();
@@ -44,12 +50,66 @@ export default function PeriodReview() {
     return entries.filter((e) => e.date >= cutoffStr);
   }, [entries, period]);
 
+  const activitySummary = useMemo((): ActivitySummaryDto => {
+    const cutoffMs =
+      Date.now() - (period === "weekly" ? 7 : 30) * 24 * 60 * 60 * 1000;
+    const periodSessions = sessionRecords.filter(
+      (r) => r.timestamp >= cutoffMs,
+    );
+    const completed = periodSessions.filter((r) => r.completed);
+    const totalFocusMinutes = Math.round(
+      completed.reduce((sum, r) => sum + r.duration, 0) / 60,
+    );
+    const completionRate =
+      periodSessions.length > 0
+        ? Math.round((completed.length / periodSessions.length) * 100)
+        : 0;
+    const rated = completed.filter((r) => r.focusQuality != null);
+    const avgFocusQuality =
+      rated.length > 0
+        ? Math.round(
+            (rated.reduce((sum, r) => sum + (r.focusQuality ?? 0), 0) /
+              rated.length) *
+              10,
+          ) / 10
+        : null;
+    const energyRated = completed.filter((r) => r.energyLevel != null);
+    const avgEnergyLevel =
+      energyRated.length > 0
+        ? Math.round(
+            (energyRated.reduce((sum, r) => sum + (r.energyLevel ?? 0), 0) /
+              energyRated.length) *
+              10,
+          ) / 10
+        : null;
+    const typeCounts: Record<string, number> = {};
+    for (const r of periodSessions) {
+      typeCounts[r.sessionType] = (typeCounts[r.sessionType] ?? 0) + 1;
+    }
+    const mostUsedSessionType =
+      Object.keys(typeCounts).length > 0
+        ? Object.entries(typeCounts).sort((a, b) => b[1] - a[1])[0][0]
+        : null;
+    return {
+      sessionsCompleted: completed.length,
+      totalFocusMinutes,
+      completionRate,
+      avgFocusQuality,
+      mostUsedSessionType,
+      currentStreak: userStats.currentStreak,
+      avgEnergyLevel,
+    };
+  }, [sessionRecords, userStats, period]);
+
   const [review, setReview] = useState<ReviewResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const hasContent =
+    periodEntries.length > 0 || activitySummary.sessionsCompleted > 0;
+
   useEffect(() => {
-    if (periodEntries.length === 0) return;
+    if (!hasContent) return;
     setLoading(true);
     setError(null);
     aiApi
@@ -62,6 +122,7 @@ export default function PeriodReview() {
           tags: e.tags ?? [],
           textContent: extractTextContent(e.blocks),
         })),
+        activitySummary,
       })
       .then((res) => setReview(res.data))
       .catch(() => setError("Couldn't generate review. Try again later."))
@@ -114,6 +175,21 @@ export default function PeriodReview() {
     accentCard: {
       backgroundColor: colors.accentMuted,
       borderColor: colors.accent,
+    },
+    winsCard: {
+      backgroundColor: colors.accentMuted,
+      borderColor: colors.accent,
+    },
+    reflectionCard: {
+      backgroundColor: colors.surfaceMuted,
+      borderColor: colors.border,
+    },
+    reflectionText: {
+      fontFamily: "SoraSemiBold",
+      fontSize: 15,
+      color: colors.textPrimary,
+      lineHeight: 23,
+      fontStyle: "italic",
     },
     cardLabel: {
       fontFamily: "SoraBold",
@@ -184,6 +260,27 @@ export default function PeriodReview() {
       color: colors.textSecondary,
       marginTop: 1,
     },
+    activityGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 12,
+      marginTop: 4,
+    },
+    activityStat: {
+      minWidth: "40%",
+      flex: 1,
+    },
+    activityValue: {
+      fontFamily: "SoraBold",
+      fontSize: 20,
+    },
+    activityKey: {
+      fontFamily: "Sora",
+      fontSize: 11,
+      textTransform: "uppercase",
+      letterSpacing: 0.6,
+      marginTop: 1,
+    },
   });
 
   return (
@@ -197,18 +294,20 @@ export default function PeriodReview() {
           <Text style={s.title}>{periodLabel}</Text>
           <Text style={s.subtitle}>
             {periodSpan} · {periodEntries.length}{" "}
-            {periodEntries.length === 1 ? "entry" : "entries"}
+            {periodEntries.length === 1 ? "entry" : "entries"} ·{" "}
+            {activitySummary.sessionsCompleted}{" "}
+            {activitySummary.sessionsCompleted === 1 ? "session" : "sessions"}
           </Text>
         </View>
       </View>
 
       {/* No entries */}
-      {periodEntries.length === 0 && (
+      {!hasContent && (
         <View style={s.center}>
           <Ionicons name="book-outline" size={40} color={colors.border} />
-          <Text style={s.emptyTitle}>No entries yet</Text>
+          <Text style={s.emptyTitle}>Nothing here yet</Text>
           <Text style={s.emptyBody}>
-            Write a few journal entries this{" "}
+            Complete a few focus sessions or write some journal entries this{" "}
             {period === "weekly" ? "week" : "month"} and come back for your
             review.
           </Text>
@@ -216,7 +315,7 @@ export default function PeriodReview() {
       )}
 
       {/* Loading */}
-      {periodEntries.length > 0 && loading && (
+      {hasContent && loading && (
         <View style={s.center}>
           <ActivityIndicator size="large" color={colors.accent} />
           <Text style={s.emptyBody}>Generating your review…</Text>
@@ -241,6 +340,118 @@ export default function PeriodReview() {
           contentContainerStyle={s.scroll}
           showsVerticalScrollIndicator={false}
         >
+          {/* Wins — celebrate first */}
+          {!!review.wins && (
+            <View style={[s.card, s.winsCard]}>
+              <Text style={[s.cardLabel, { color: colors.accent }]}>
+                🏆 Wins
+              </Text>
+              <Text style={[s.cardText, { color: colors.textPrimary }]}>
+                {review.wins}
+              </Text>
+            </View>
+          )}
+
+          {/* Activity snapshot */}
+          {activitySummary.sessionsCompleted > 0 && (
+            <View style={s.card}>
+              <Text style={s.cardLabel}>Activity</Text>
+              <View style={s.activityGrid}>
+                <View style={s.activityStat}>
+                  <Text
+                    style={[s.activityValue, { color: colors.textPrimary }]}
+                  >
+                    {activitySummary.sessionsCompleted}
+                  </Text>
+                  <Text
+                    style={[s.activityKey, { color: colors.textSecondary }]}
+                  >
+                    sessions
+                  </Text>
+                </View>
+                <View style={s.activityStat}>
+                  <Text
+                    style={[s.activityValue, { color: colors.textPrimary }]}
+                  >
+                    {activitySummary.totalFocusMinutes}m
+                  </Text>
+                  <Text
+                    style={[s.activityKey, { color: colors.textSecondary }]}
+                  >
+                    focus time
+                  </Text>
+                </View>
+                <View style={s.activityStat}>
+                  <Text
+                    style={[s.activityValue, { color: colors.textPrimary }]}
+                  >
+                    {activitySummary.completionRate}%
+                  </Text>
+                  <Text
+                    style={[s.activityKey, { color: colors.textSecondary }]}
+                  >
+                    completed
+                  </Text>
+                </View>
+                {activitySummary.avgFocusQuality != null && (
+                  <View style={s.activityStat}>
+                    <Text
+                      style={[s.activityValue, { color: colors.textPrimary }]}
+                    >
+                      {activitySummary.avgFocusQuality}/10
+                    </Text>
+                    <Text
+                      style={[s.activityKey, { color: colors.textSecondary }]}
+                    >
+                      focus quality
+                    </Text>
+                  </View>
+                )}
+                {activitySummary.avgEnergyLevel != null && (
+                  <View style={s.activityStat}>
+                    <Text
+                      style={[s.activityValue, { color: colors.textPrimary }]}
+                    >
+                      {activitySummary.avgEnergyLevel}/10
+                    </Text>
+                    <Text
+                      style={[s.activityKey, { color: colors.textSecondary }]}
+                    >
+                      avg energy
+                    </Text>
+                  </View>
+                )}
+                {activitySummary.currentStreak > 0 && (
+                  <View style={s.activityStat}>
+                    <Text
+                      style={[s.activityValue, { color: colors.textPrimary }]}
+                    >
+                      {activitySummary.currentStreak}d
+                    </Text>
+                    <Text
+                      style={[s.activityKey, { color: colors.textSecondary }]}
+                    >
+                      streak
+                    </Text>
+                  </View>
+                )}
+              </View>
+              {activitySummary.mostUsedSessionType && (
+                <Text style={[s.cardText, { marginTop: 8 }]}>
+                  Most used:{" "}
+                  <Text
+                    style={{
+                      color: colors.textPrimary,
+                      fontFamily: "SoraBold",
+                    }}
+                  >
+                    {activitySummary.mostUsedSessionType}
+                  </Text>
+                </Text>
+              )}
+            </View>
+          )}
+
           {/* Overall summary */}
           {!!review.overallSummary && (
             <View style={s.card}>
@@ -278,6 +489,24 @@ export default function PeriodReview() {
             <View style={s.card}>
               <Text style={s.cardLabel}>Pattern Observed</Text>
               <Text style={s.cardText}>{review.patternObservation}</Text>
+            </View>
+          )}
+
+          {/* Activity highlight from AI */}
+          {!!review.activityHighlight && (
+            <View style={s.card}>
+              <Text style={s.cardLabel}>Productivity Insight</Text>
+              <Text style={s.cardText}>{review.activityHighlight}</Text>
+            </View>
+          )}
+
+          {/* Reflection prompt — carry into next period */}
+          {!!review.reflectionPrompt && (
+            <View style={[s.card, s.reflectionCard]}>
+              <Text style={s.cardLabel}>Reflect On This</Text>
+              <Text style={[s.cardText, s.reflectionText]}>
+                {review.reflectionPrompt}
+              </Text>
             </View>
           )}
 

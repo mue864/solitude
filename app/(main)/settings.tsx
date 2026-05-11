@@ -2,6 +2,7 @@ import BottomSheet from "@/components/BottomSheet";
 import { useTheme } from "@/context/ThemeContext";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useAuthStore } from "@/store/authStore";
+import { useSessionStore } from "@/store/sessionState";
 import { useSettingsStore } from "@/store/settingsStore";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -46,14 +47,16 @@ export default function Settings() {
   const theme = useSettingsStore((s) => s.theme);
   const soundEnabled = useSettingsStore((s) => s.soundEnabled);
   const vibrationEnabled = useSettingsStore((s) => s.vibrationEnabled);
+  const strictMode = useSettingsStore((s) => s.strictMode);
+  const isSessionActive = useSessionStore((s) => s.isRunning || s.isPaused);
   const isPro = useAuthStore((s) => s.user?.isPro ?? false);
-  const upgradeToPro = useSettingsStore((s) => s.upgradeToPro);
   const setProFromServer = useSettingsStore((s) => s.setProFromServer);
   const updateSessionDuration = useSettingsStore(
     (s) => s.updateSessionDuration,
   );
   const updateBreakDuration = useSettingsStore((s) => s.updateBreakDuration);
   const toggleAutoStart = useSettingsStore((s) => s.toggleAutoStart);
+  const toggleStrictMode = useSettingsStore((s) => s.toggleStrictMode);
   const updateNotifications = useSettingsStore((s) => s.updateNotifications);
   const updateTheme = useSettingsStore((s) => s.updateTheme);
   const toggleSound = useSettingsStore((s) => s.toggleSound);
@@ -77,11 +80,11 @@ export default function Settings() {
   const [signOutSheet, setSignOutSheet] = useState(false);
   const [resetSheet, setResetSheet] = useState(false);
   const [openSection, setOpenSection] = useState<
-    "sessions" | "notifications" | "appearance" | null
+    "sessions" | "notifications" | "appearance" | "data" | null
   >("sessions");
 
   const toggleSection = (
-    section: "sessions" | "notifications" | "appearance",
+    section: "sessions" | "notifications" | "appearance" | "data",
   ) => {
     setOpenSection((prev) => (prev === section ? null : section));
   };
@@ -205,6 +208,20 @@ export default function Settings() {
             onToggle={toggleAutoStart}
             colors={colors}
           />
+          <View style={[s.divider, { backgroundColor: colors.border }]} />
+          {/* Strict mode */}
+          <ToggleRow
+            label="Strict mode"
+            hint={
+              isSessionActive
+                ? "Cannot change during an active session"
+                : "Pause and stop are locked during sessions"
+            }
+            value={strictMode}
+            onToggle={isSessionActive ? () => {} : toggleStrictMode}
+            disabled={isSessionActive}
+            colors={colors}
+          />
         </Section>
 
         {/* ── Notifications ── */}
@@ -324,7 +341,32 @@ export default function Settings() {
             label="Custom color themes"
             hint="Create your own look"
             unlocked={isPro}
-            onPress={() => setProSheet(true)}
+            onPress={() =>
+              isPro
+                ? router.push("/(screens)/themeCreator" as any)
+                : setProSheet(true)
+            }
+            colors={colors}
+          />
+        </Section>
+
+        {/* ── Data ── */}
+        <Section
+          label="Data"
+          icon="download-outline"
+          open={openSection === "data"}
+          onToggle={() => toggleSection("data")}
+          colors={colors}
+        >
+          <LockedRow
+            label="Export your data"
+            hint="Sessions, journal & tasks as CSV"
+            unlocked={isPro}
+            onPress={() =>
+              isPro
+                ? router.push("/(screens)/dataExport" as any)
+                : setProSheet(true)
+            }
             colors={colors}
           />
         </Section>
@@ -370,6 +412,28 @@ export default function Settings() {
                 >
                   {authUser.email}
                 </Text>
+                <View style={[s.divider, { backgroundColor: colors.border }]} />
+                <TouchableOpacity
+                  style={[s.row, { paddingVertical: 14 }]}
+                  onPress={() => router.push("/(screens)/plans" as any)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name="diamond-outline"
+                    size={16}
+                    color={colors.accent}
+                    style={{ marginRight: 8 }}
+                  />
+                  <Text style={[s.rowLabel, { color: colors.accent }]}>
+                    {isPro ? "Manage subscription" : "Plans & Pricing"}
+                  </Text>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={14}
+                    color={colors.textSecondary}
+                    style={{ marginLeft: "auto" }}
+                  />
+                </TouchableOpacity>
                 <View style={[s.divider, { backgroundColor: colors.border }]} />
                 <TouchableOpacity
                   style={[s.row, { paddingVertical: 14 }]}
@@ -425,7 +489,7 @@ export default function Settings() {
 
           {!isPro && (
             <TouchableOpacity
-              onPress={() => setProSheet(true)}
+              onPress={() => router.push("/(screens)/paywall" as any)}
               style={[
                 s.footerBtn,
                 {
@@ -490,15 +554,16 @@ export default function Settings() {
         title="Sign Out"
       >
         <Text style={[s.proBody, { color: colors.textSecondary }]}>
-          You&apos;ll be signed out of your account. Your local data stays on this
-          device, but Pro features will be restricted until you sign back in.
+          You&apos;ll be signed out of your account. Your local data stays on
+          this device, but Pro features will be restricted until you sign back
+          in.
         </Text>
         <TouchableOpacity
           style={[s.upgradeBtn, { backgroundColor: colors.destructive }]}
-          onPress={() => {
+          onPress={async () => {
             setSignOutSheet(false);
             setProFromServer(false);
-            logout();
+            await logout();
           }}
         >
           <Text style={s.upgradeBtnText}>Sign Out</Text>
@@ -548,11 +613,11 @@ export default function Settings() {
         <TouchableOpacity
           style={[s.upgradeBtn, { backgroundColor: colors.accent }]}
           onPress={() => {
-            upgradeToPro();
             setProSheet(false);
+            router.push("/(screens)/paywall" as any);
           }}
         >
-          <Text style={s.upgradeBtnText}>Upgrade Now</Text>
+          <Text style={s.upgradeBtnText}>See Plans</Text>
         </TouchableOpacity>
       </BottomSheet>
     </View>
@@ -651,21 +716,43 @@ function Section({
 
 function ToggleRow({
   label,
+  hint,
   value,
   onToggle,
+  disabled,
   colors,
 }: {
   label: string;
+  hint?: string;
   value: boolean;
   onToggle: () => void;
+  disabled?: boolean;
   colors: ReturnType<typeof useTheme>["colors"];
 }) {
   return (
-    <View style={s.toggleRow}>
-      <Text style={[s.rowLabel, { color: colors.textPrimary }]}>{label}</Text>
+    <View style={[s.toggleRow, disabled && { opacity: 0.45 }]}>
+      <View style={{ flex: 1, marginRight: 12 }}>
+        <Text style={[s.rowLabel, { color: colors.textPrimary }]}>{label}</Text>
+        {hint && (
+          <Text
+            style={[
+              s.rowLabel,
+              {
+                color: colors.textSecondary,
+                fontSize: 12,
+                marginTop: 2,
+                fontFamily: "Sora",
+              },
+            ]}
+          >
+            {hint}
+          </Text>
+        )}
+      </View>
       <Switch
         value={value}
-        onValueChange={onToggle}
+        onValueChange={disabled ? undefined : onToggle}
+        disabled={disabled}
         trackColor={{ false: colors.surfaceMuted, true: colors.accent }}
         thumbColor="#fff"
         ios_backgroundColor={colors.surfaceMuted}
@@ -729,7 +816,7 @@ function LockedRow({
 const s = StyleSheet.create({
   screen: { flex: 1 },
   scroll: { paddingBottom: 180 },
-  header: { paddingHorizontal: 24, paddingTop: 56, paddingBottom: 20 },
+  header: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 20 },
   title: { fontSize: 24, fontFamily: "SoraBold", letterSpacing: -0.3 },
   subtitle: { fontSize: 14, fontFamily: "Sora", marginTop: 4 },
 

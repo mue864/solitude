@@ -42,6 +42,10 @@ export const authApi = {
     api.post("/auth/login", body),
 };
 
+export const billingApi = {
+  refreshRevenueCatEntitlement: () => api.post("/users/me/revenuecat/refresh"),
+};
+
 // ─── Tasks ───────────────────────────────────────────────────────────────────
 
 export const tasksApi = {
@@ -126,9 +130,20 @@ export type ReviewEntryDto = {
   textContent: string;
 };
 
+export type ActivitySummaryDto = {
+  sessionsCompleted: number;
+  totalFocusMinutes: number;
+  completionRate: number; // 0–100
+  avgFocusQuality: number | null; // 1–10, null if no rated sessions
+  mostUsedSessionType: string | null;
+  currentStreak: number;
+  avgEnergyLevel: number | null; // 1–10, null if no rated sessions
+};
+
 export type ReviewRequest = {
   period: "weekly" | "monthly";
   entries: ReviewEntryDto[];
+  activitySummary?: ActivitySummaryDto | null;
 };
 
 export type ReviewResponse = {
@@ -138,6 +153,9 @@ export type ReviewResponse = {
   recurringThemes: string[];
   patternObservation: string | null;
   suggestedFocus: string | null;
+  activityHighlight: string | null;
+  wins: string | null;
+  reflectionPrompt: string | null;
 };
 
 export const aiApi = {

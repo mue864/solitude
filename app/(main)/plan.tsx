@@ -48,7 +48,7 @@ export default function Plan() {
   const [warningModalVisible, setWarningModalVisible] = useState(false);
   const [pendingTaskSwitch, setPendingTaskSwitch] = useState<Task | null>(null);
   const [completedExpanded, setCompletedExpanded] = useState(false);
-  const undoTimeout = useRef<NodeJS.Timeout | null>(null);
+  const undoTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const activeTasks = getActiveTasks();
   const completedTasks = getCompletedTasks();
@@ -522,7 +522,7 @@ const s = StyleSheet.create({
   screen: { flex: 1 },
   scrollContent: { paddingBottom: 200 },
   // Header
-  header: { paddingHorizontal: 24, paddingTop: 60, paddingBottom: 20 },
+  header: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 20 },
   dateLabel: {
     fontSize: 12,
     fontFamily: "SoraSemiBold",
@@ -635,6 +635,7 @@ const s = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 64,
     paddingHorizontal: 32,
+    justifyContent: "center",
   },
   emptyIconWrap: {
     width: 64,

@@ -1,4 +1,5 @@
 import { useTheme } from "@/context/ThemeContext";
+import { revenuecatService } from "@/services/revenuecatService";
 import { authApi } from "@/services/api";
 import { pullAndMerge } from "@/services/cloudMerge";
 import { useAuthStore } from "@/store/authStore";
@@ -44,6 +45,11 @@ export default function LoginScreen() {
       const { accessToken, user } = res.data;
       await setAuth(accessToken, user);
       setProFromServer(user.isPro ?? false);
+      try {
+        await revenuecatService.logIn(user.id);
+      } catch {
+        // Non-fatal: app can still continue and entitlement can be refreshed later.
+      }
       // Pull cloud data and merge with local stores in background
       pullAndMerge();
       router.replace("/(main)/focus");

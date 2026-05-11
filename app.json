@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.mutsa47.solitude",
+      "bundleIdentifier": "com.sikavo.solitude",
       "runtimeVersion": "1.0.0"
     },
     "android": {
@@ -23,13 +23,10 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS",
-        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ],
-      "package": "com.mutsa47.solitude",
+      "package": "com.sikavo.solitude",
       "runtimeVersion": {
         "policy": "appVersion"
       }
@@ -52,8 +49,17 @@
           "backgroundColor": "#111318"
         }
       ],
+      [
+        "@sentry/react-native",
+        {
+          "organization": "sikavo",
+          "project": "react-native",
+          "url": "https://de.sentry.io/"
+        }
+      ],
       "expo-audio",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true

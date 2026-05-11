@@ -11,6 +11,7 @@ import { format, parseISO } from "date-fns";
 import { Audio } from "expo-av";
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { Angry, Frown, Meh, Smile, Zap } from "lucide-react-native";
 import React, {
   useCallback,
   useEffect,
@@ -188,7 +189,31 @@ function AudioBlock({
         staysActiveInBackground: true,
       });
       const { recording: rec } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY,
+        {
+          android: {
+            extension: ".m4a",
+            outputFormat: "mpeg4" as any,
+            audioEncoder: "he_aac" as any,
+            sampleRate: 44100,
+            numberOfChannels: 1,
+            bitRate: 48000,
+          },
+          ios: {
+            extension: ".m4a",
+            outputFormat: Audio.IOSOutputFormat.MPEG4AAC_HE,
+            audioQuality: Audio.IOSAudioQuality.MEDIUM,
+            sampleRate: 44100,
+            numberOfChannels: 1,
+            bitRate: 48000,
+            linearPCMBitDepth: 16,
+            linearPCMIsBigEndian: false,
+            linearPCMIsFloat: false,
+          },
+          web: {
+            mimeType: "audio/webm",
+            bitsPerSecond: 48000,
+          },
+        },
         (s) =>
           s.isRecording &&
           setRecordingTime(
@@ -616,6 +641,9 @@ export default function JournalEditor() {
 
   // ── AI Insight state ───────────────────────────────────────
   const [showInsight, setShowInsight] = useState(false);
+  const hintAnim = useRef(new Animated.Value(0)).current;
+  const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [hintVisible, setHintVisible] = useState(false);
   const [insightLoading, setInsightLoading] = useState(false);
   const [insight, setInsight] = useState<JournalInsight | null>(null);
   const [insightError, setInsightError] = useState<string | null>(null);
@@ -679,6 +707,21 @@ export default function JournalEditor() {
   );
 
   // ── Actions ───────────────────────────────────────────────
+  const dismissHint = useCallback(
+    (goBack = false) => {
+      if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+      Animated.timing(hintAnim, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }).start(() => {
+        setHintVisible(false);
+        if (goBack) router.back();
+      });
+    },
+    [hintAnim, router],
+  );
+
   const handleSave = useCallback(async () => {
     if (isEmpty) {
       Alert.alert("Empty Entry", "Add some content before saving.");
@@ -773,7 +816,24 @@ export default function JournalEditor() {
         setInsightLoading(false);
       }
     } else {
-      router.back();
+      // Free user — show hint only on milestone new-entry counts (1st, 3rd, 7th)
+      if (!entry) {
+        const count = useJournalStore.getState().entries.length;
+        if ([1, 3, 7].includes(count)) {
+          setHintVisible(true);
+          Animated.spring(hintAnim, {
+            toValue: 1,
+            useNativeDriver: true,
+            tension: 60,
+            friction: 10,
+          }).start();
+          hintTimerRef.current = setTimeout(() => dismissHint(true), 4000);
+        } else {
+          router.back();
+        }
+      } else {
+        router.back();
+      }
     }
   }, [
     isEmpty,
@@ -789,6 +849,8 @@ export default function JournalEditor() {
     recordInsight,
     saveInsight,
     router,
+    dismissHint,
+    hintAnim,
   ]);
 
   const handleBack = useCallback(() => {
@@ -1217,7 +1279,8 @@ export default function JournalEditor() {
             {/* ── Mood picker ── */}
             <View style={es.moodRow}>
               {([1, 2, 3, 4, 5] as JournalMood[]).map((v, i) => {
-                const emojis = ["😩", "😕", "😐", "🙂", "🔥"];
+                const MOOD_ICONS = [Angry, Frown, Meh, Smile, Zap];
+                const MoodIcon = MOOD_ICONS[i];
                 const selected = mood === v;
                 return (
                   <TouchableOpacity
@@ -1237,7 +1300,10 @@ export default function JournalEditor() {
                     ]}
                     activeOpacity={0.75}
                   >
-                    <Text style={es.moodEmoji}>{emojis[i]}</Text>
+                    <MoodIcon
+                      size={22}
+                      color={selected ? colors.accent : colors.textSecondary}
+                    />
                   </TouchableOpacity>
                 );
               })}
@@ -1373,6 +1439,51 @@ export default function JournalEditor() {
         </View>
       </View>
 
+      {/* ── AI insight hint banner (free users, milestone entries only) ── */}
+      {hintVisible && (
+        <Animated.View
+          style={[
+            es.hintBanner,
+            { backgroundColor: colors.surface, borderColor: colors.accent },
+            {
+              opacity: hintAnim,
+              transform: [
+                {
+                  translateY: hintAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [24, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          <View
+            style={[es.hintIconCircle, { backgroundColor: colors.accentMuted }]}
+          >
+            <Ionicons name="sparkles" size={16} color={colors.accent} />
+          </View>
+          <View style={es.hintTextWrap}>
+            <Text style={[es.hintTitle, { color: colors.textPrimary }]}>
+              Pro analyses this entry
+            </Text>
+            <Text style={[es.hintSub, { color: colors.textSecondary }]}>
+              Mood patterns, themes & a follow-up question
+            </Text>
+          </View>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={[es.hintCta, { backgroundColor: colors.accent }]}
+            onPress={() => {
+              dismissHint(false);
+              router.replace("/(screens)/paywall" as any);
+            }}
+          >
+            <Text style={es.hintCtaText}>Try Pro</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      )}
+
       {/* ── AI Insight modal (Pro only) ── */}
       <JournalInsightModal
         isVisible={showInsight}
@@ -1393,6 +1504,44 @@ export default function JournalEditor() {
 
 const es = StyleSheet.create({
   screen: { flex: 1 },
+
+  // AI insight hint banner
+  hintBanner: {
+    position: "absolute",
+    bottom: 100,
+    left: 16,
+    right: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 6,
+    zIndex: 100,
+  },
+  hintIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  hintTextWrap: { flex: 1 },
+  hintTitle: { fontFamily: "SoraSemiBold", fontSize: 13, marginBottom: 1 },
+  hintSub: { fontFamily: "Sora", fontSize: 11, lineHeight: 15 },
+  hintCta: {
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    flexShrink: 0,
+  },
+  hintCtaText: { fontFamily: "SoraSemiBold", fontSize: 12, color: "#fff" },
 
   // Header
   header: {
@@ -1441,8 +1590,6 @@ const es = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1.5,
   },
-  moodEmoji: { fontSize: 20 },
-
   // Tags
   tagsScroll: { marginBottom: 16 },
   tagsContent: { paddingHorizontal: 20, gap: 8 },

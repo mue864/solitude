@@ -1,10 +1,12 @@
 import WarningToast from "@/components/modals/WarningToast";
 import ReflectionSaveToast from "@/components/ReflectionSaveToast";
 import UndoToast from "@/components/undoToast";
+import { SENTRY_DSN } from "@/constants/env";
 import { ThemeProvider, useTheme } from "@/context/ThemeContext";
 import { useAudioSync } from "@/hooks/useAudioSync";
 import { useAuthStore } from "@/store/authStore";
 import { useSessionStore } from "@/store/sessionState";
+import * as Sentry from "@sentry/react-native";
 import notifee, { AndroidImportance, EventType } from "@notifee/react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { TransitionPresets } from "@react-navigation/stack";
@@ -21,6 +23,13 @@ import Toast, { BaseToast, ErrorToast } from "react-native-toast-message";
 // load splashscreen
 SplashScreen.preventAutoHideAsync();
 
+Sentry.init({
+  dsn: SENTRY_DSN,
+  enabled: !__DEV__,
+  tracesSampleRate: 0.2,
+  attachStacktrace: true,
+});
+
 // Must be registered at module level for background events
 
 // Foreground service task — ticks the live countdown while app is minimized
@@ -32,7 +41,7 @@ notifee.registerForegroundService((_notification) => {
       if (!state.isRunning) {
         try {
           await notifee.stopForegroundService();
-        } catch (_) {}
+        } catch {}
         resolve();
         return;
       }
@@ -62,7 +71,7 @@ notifee.registerForegroundService((_notification) => {
             importance: AndroidImportance.LOW,
           },
         });
-      } catch (_) {}
+      } catch {}
 
       setTimeout(tick, 1000);
     };
@@ -87,7 +96,7 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
   }
 });
 
-export default function RootLayout() {
+function RootLayout() {
   useAudioSync();
   const [fontsLoaded] = useFonts({
     Sora: require("@/assets/fonts/Sora.ttf"),
@@ -142,6 +151,10 @@ export default function RootLayout() {
     </ThemeProvider>
   );
 }
+
+const WrappedRootLayout = Sentry.wrap(RootLayout);
+
+export default WrappedRootLayout;
 
 function ThemedRoot({ onLayout }: { onLayout: () => void }) {
   const { isDarkMode, colors } = useTheme();
@@ -201,6 +214,41 @@ function ThemedRoot({ onLayout }: { onLayout: () => void }) {
             />
             <Stack.Screen
               name="(screens)/signInPrompt"
+              options={{
+                headerShown: false,
+                contentStyle: styles.screenContent,
+              }}
+            />
+            <Stack.Screen
+              name="(screens)/scheduledReminders"
+              options={{
+                headerShown: false,
+                contentStyle: styles.screenContent,
+              }}
+            />
+            <Stack.Screen
+              name="(screens)/periodReview"
+              options={{
+                headerShown: false,
+                contentStyle: styles.screenContent,
+              }}
+            />
+            <Stack.Screen
+              name="(screens)/themeCreator"
+              options={{
+                headerShown: false,
+                contentStyle: styles.screenContent,
+              }}
+            />
+            <Stack.Screen
+              name="(screens)/dataExport"
+              options={{
+                headerShown: false,
+                contentStyle: styles.screenContent,
+              }}
+            />
+            <Stack.Screen
+              name="(screens)/plans"
               options={{
                 headerShown: false,
                 contentStyle: styles.screenContent,

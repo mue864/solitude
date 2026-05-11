@@ -3,6 +3,7 @@ import { useJournalStore, type JournalEntry } from "@/store/journalStore";
 import { Ionicons } from "@expo/vector-icons";
 import { format, parseISO } from "date-fns";
 import { useRouter } from "expo-router";
+import { Angry, Frown, Meh, Smile, Zap } from "lucide-react-native";
 import React, { useCallback, useMemo, useState } from "react";
 import {
   FlatList,
@@ -172,7 +173,8 @@ function JournalCard({
   const preview = textBlock?.content?.trim().slice(0, 100) ?? "";
   const dateStr = item.date ? format(parseISO(item.date), "MMM d, yyyy") : "";
   const blockCount = item.blocks?.length ?? 0;
-  const moodEmojis = ["😩", "😕", "😐", "🙂", "🔥"];
+  const MOOD_ICONS = [Angry, Frown, Meh, Smile, Zap];
+  const MoodIcon = item.mood != null ? MOOD_ICONS[item.mood - 1] : null;
   const visibleTags = item.tags?.slice(0, 3) ?? [];
 
   return (
@@ -196,8 +198,8 @@ function JournalCard({
           >
             {item.title || "Untitled"}
           </Text>
-          {item.mood != null && (
-            <Text style={s.moodEmoji}>{moodEmojis[item.mood - 1]}</Text>
+          {MoodIcon != null && (
+            <MoodIcon size={17} color={colors.textSecondary} />
           )}
         </View>
         {!!preview && (
@@ -289,7 +291,7 @@ const s = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 24,
-    paddingTop: 56,
+    paddingTop: 20,
     paddingBottom: 12,
   },
   title: { fontSize: 24, fontFamily: "SoraBold", letterSpacing: -0.3 },
@@ -335,7 +337,6 @@ const s = StyleSheet.create({
     marginBottom: 4,
   },
   cardTitle: { flex: 1, fontSize: 15, fontFamily: "SoraSemiBold" },
-  moodEmoji: { fontSize: 16 },
   cardPreview: {
     fontSize: 13,
     fontFamily: "Sora",

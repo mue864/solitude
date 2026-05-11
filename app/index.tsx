@@ -1,5 +1,6 @@
 import AppIcon from "@/assets/svg/onboarding/app-icon.svg";
 import { Strings } from "@/constants";
+import { useTheme } from "@/context/ThemeContext";
 import { useOnboardingStore } from "@/store/onboardingStore";
 import { useSessionStore } from "@/store/sessionState";
 import { router } from "expo-router";
@@ -14,6 +15,7 @@ import Animated, {
 import "../global.css";
 
 export default function Index() {
+  const { colors } = useTheme();
   const { checkAndResetStreak } = useSessionStore();
   const isOnboardingComplete = useOnboardingStore(
     (state) => state.isOnboardingFinished,
@@ -68,7 +70,7 @@ export default function Index() {
     <View
       style={{
         flex: 1,
-        backgroundColor: "#111318",
+        backgroundColor: colors.background,
         justifyContent: "center",
         alignItems: "center",
       }}
@@ -79,14 +81,24 @@ export default function Index() {
 
       <Animated.View style={animatedText}>
         <Text
-          style={{ color: "#F5F1EB", fontSize: 30, fontFamily: "Courgette" }}
+          style={{
+            color: colors.textPrimary,
+            fontSize: 30,
+            fontFamily: "Courgette",
+          }}
         >
           {Strings.appName}
         </Text>
       </Animated.View>
 
       <View style={{ position: "absolute", bottom: 32, alignSelf: "center" }}>
-        <Text style={{ color: "#8A8A96", fontSize: 20, fontFamily: "Sora" }}>
+        <Text
+          style={{
+            color: colors.textSecondary,
+            fontSize: 20,
+            fontFamily: "Sora",
+          }}
+        >
           {Strings.companyName}
         </Text>
       </View>
